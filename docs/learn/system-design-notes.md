@@ -69,3 +69,50 @@ environment, and the testing pyramid: unit → local emulator → cloud integrat
 
 **In this project:** `-c stage=local` → Floci, `-c stage=aws` → your real account. The guard
 lives in `infra/lib/config.ts`.
+
+---
+
+## 3. Authentication at scale (JWTs)
+
+**The question:** millions of users and dozens of services. How does each service know who's calling?
+
+- **Option A, server sessions:** login creates a session id stored in a shared store (Redis).
+  Every request does a lookup. Easy to revoke, but every request hits the store.
+- **Option B, JWTs:** login returns a signed token carrying the user id. Any service verifies
+  the signature locally with a public key, with no lookup. Scales well, but you can't easily "un-issue"
+  a token, so keep it short-lived (1 hour) plus a refresh token.
+- **Where to check:** once, at the gateway (API Gateway JWT authorizer), so services trust the verified claims.
+
+```mermaid
+flowchart LR
+  U[User] -->|password| IDP[Identity provider<br/>Cognito]
+  IDP -->|signed JWT| U
+  U -->|Bearer JWT| GW[API Gateway<br/>verifies signature]
+  GW -->|claims.sub| S1[Service A]
+  GW -->|claims.sub| S2[Service B]
+```
+
+**Interview angle:** stateless vs stateful auth, token expiry + refresh, revocation
+(short TTL, deny-list for emergencies), never trust ids from the request body.
+
+---
+
+## 4. Data modelling in DynamoDB (single table)
+
+**The question:** how do you store users, posts, likes, follows and feeds in a NoSQL key-value store?
+
+- **Start from access patterns**, not entities: "get profile by id", "get profile by username",
+  "list a user's posts newest first"... Each pattern becomes a key design.
+- **One table, prefixed keys:** `USER#123 / PROFILE`, `UNAME#ann / UNAME`, `POST#9 / LIKE#123`.
+  Related items share a partition key, so one query fetches them together.
+- **GSI** (global secondary index) = a second key layout over the same items, for patterns the main key can't serve.
+- **Uniqueness:** there's no UNIQUE constraint, so write a claim item with `attribute_not_exists`, in a
+  **transaction** with the main item.
+- **Hot partitions:** one very popular key (a celebrity's follower list) can throttle. Spread load
+  (sharded keys) or change the pattern. This comes back in the feed step.
+
+**SQL vs DynamoDB in interviews:** SQL gives flexible queries + joins (good when patterns are unknown).
+DynamoDB gives predictable single-digit-ms reads at any scale, but you must know your queries up front.
+
+**In this project:** profile + username claim (`services/src/users/repo.ts`); the race test
+proves only one of two simultaneous claims wins.
