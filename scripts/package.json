@@ -1,0 +1,10 @@
+{
+  "name": "@ig/scripts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "deploy-local": "tsx src/deploy-local.ts",
+    "spike": "tsx src/spike-check.ts"
+  }
+}
