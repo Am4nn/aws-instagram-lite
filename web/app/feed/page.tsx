@@ -1,0 +1,59 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState, type FormEvent } from "react";
+import { Nav } from "../../components/Nav";
+import { api, type FeedItem } from "../../lib/api";
+
+export default function Feed() {
+  const [items, setItems] = useState<FeedItem[] | null>(null);
+  const [next, setNext] = useState<string | undefined>();
+  const [loading, setLoading] = useState(false);
+  const [find, setFind] = useState("");
+
+  async function load(cursor?: string) {
+    setLoading(true);
+    try {
+      const r = await api<{ items: FeedItem[]; next?: string }>(`/feed${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+      setItems((prev) => (cursor ? [...(prev ?? []), ...r.items] : r.items));
+      setNext(r.next);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  function go(e: FormEvent) {
+    e.preventDefault();
+    if (find.trim()) window.location.href = `/u?name=${encodeURIComponent(find.trim())}`;
+  }
+
+  return (
+    <>
+      <Nav />
+      <main>
+        <form className="find" onSubmit={go}>
+          <input placeholder="Find someone by username" value={find} onChange={(e) => setFind(e.target.value)} aria-label="Find a user" />
+          <button type="submit">Go</button>
+        </form>
+        {items === null && <p className="muted">Loading…</p>}
+        {items?.length === 0 && <p className="muted">Your feed is empty. Follow someone to see their posts here.</p>}
+        {items?.map((p) => (
+          <article key={p.postId} className="feed-card">
+            <Link href={`/u?name=${p.author.username}`} className="author">@{p.author.username}</Link>
+            <Link href={`/p?id=${p.postId}`}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={p.fullUrl} alt={p.caption || "photo"} loading="lazy" />
+            </Link>
+            {p.caption && <p>{p.caption}</p>}
+            <p className="muted small">{new Date(p.createdAt).toLocaleString()}</p>
+          </article>
+        ))}
+        {next && (
+          <button className="more" onClick={() => load(next)} disabled={loading}>{loading ? "Loading…" : "Load more"}</button>
+        )}
+      </main>
+    </>
+  );
+}

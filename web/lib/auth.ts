@@ -86,3 +86,14 @@ export function authErrorMessage(e: unknown): string {
   if (name === "InvalidPasswordException") return "Password must be at least 8 characters.";
   return (e as Error)?.message || "Something went wrong.";
 }
+
+/** My Cognito user id (`sub`), read from the stored ID token (display only; the API re-checks it). */
+export function mySub(): string | null {
+  const s = load();
+  if (!s) return null;
+  try {
+    return JSON.parse(atob(s.idToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).sub ?? null;
+  } catch {
+    return null;
+  }
+}

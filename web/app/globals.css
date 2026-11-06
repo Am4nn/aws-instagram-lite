@@ -117,3 +117,16 @@ button.link { background: none; border: none; color: var(--accent); padding: 0; 
 .post img { width: 100%; border-radius: 8px; display: block; }
 .small { font-size: 13px; }
 input[type="file"] { padding: 8px; }
+
+/* ---------- step 4: feed, follow ---------- */
+.find { display: flex; gap: 8px; margin: 0 0 24px; }
+.find input { flex: 1; }
+.feed-card { border: 1px solid var(--line); border-radius: 10px; background: var(--card); margin: 0 0 20px; overflow: hidden; }
+.feed-card .author { display: block; padding: 12px 14px; font-weight: 600; color: var(--fg); text-decoration: none; }
+.feed-card img { width: 100%; display: block; }
+.feed-card p { margin: 10px 14px; }
+.feed-card p.small { margin-top: 0; }
+.more { width: 100%; }
+.profile-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.profile-head h1 { margin: 0; }
+button.secondary { background: transparent; color: var(--fg); border-color: var(--line); }

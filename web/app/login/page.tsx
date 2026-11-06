@@ -26,7 +26,7 @@ export default function Login() {
     try {
       if (mode === "up") await signUp(username, password);
       await signIn(username, password);
-      window.location.href = "/me";
+      window.location.href = mode === "up" ? "/me" : "/feed"; // new users pick a username first
     } catch (err) {
       setError(authErrorMessage(err));
       setBusy(false);

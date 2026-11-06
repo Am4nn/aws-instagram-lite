@@ -53,3 +53,5 @@ export type Post = {
   thumbUrl?: string;
   fullUrl?: string;
 };
+
+export type FeedItem = Post & { author: { userId: string; username: string } };
