@@ -15,7 +15,8 @@
     "spike": "npm -w scripts run spike",
     "smoke": "npm -w scripts run smoke",
     "seed": "npm -w scripts run seed",
-    "ops": "npm -w scripts run ops --"
+    "ops": "npm -w scripts run ops --",
+    "deploy:web": "npm -w scripts run deploy-web"
   },
   "devDependencies": {
     "@types/node": "^22",

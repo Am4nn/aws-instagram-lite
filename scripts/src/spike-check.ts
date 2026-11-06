@@ -46,6 +46,8 @@ const SETUP_NOTES = [
   "(step 3) Inside Lambda, Floci injects `AWS_ENDPOINT_URL=http://localhost.floci.io:4566`; presigned URLs minted there also work from the browser (public DNS → 127.0.0.1). Step Functions retry with jitter + MaxAttempts 0 retriers work.",
   "(step 5) DynamoDB Streams → Lambda with an `eventName: INSERT` filter works (MODIFY correctly filtered out). Floci runs transactions serially, so real-AWS `TransactionConflict` cancellations can't be reproduced locally; the code handles them anyway.",
   "(step 6) `AWS::Logs::LogGroup` with a custom name is reported CREATE_COMPLETE but not created, and Lambda `LoggingConfig.LogGroup` is ignored (logs stay in the Lambda container: `docker logs`). Step Functions `ExecutionsFailed` metrics aren't emitted, so that alarm only fires on AWS. SQS DLQ alarms do work end to end.",
+  "(step 7) CloudFront + OAC + private S3 works over HTTP at `http://<id>.cloudfront.localhost.floci.io:4566` (no HTTPS, so the viewer `redirect-to-https` isn't applied). Extensionless S3 keys work. Custom error responses (404 page) aren't applied, and CloudFront Functions don't run. The browser origin must be in `FLOCI_SECURITY_EXTRA_CORS_ALLOWED_ORIGINS` (no wildcards); `deploy:web` handles it.",
+  "(step 7) `FLOCI_STORAGE_MODE=persistent` keeps every resource across container restarts (the default in-memory mode wipes them).",
 ];
 
 const reportPath = fileURLToPath(new URL("../../docs/learn/floci-compat.md", import.meta.url));

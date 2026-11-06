@@ -14,6 +14,7 @@ import { addPipeline } from "./pipeline.js";
 import { addSocial } from "./social.js";
 import { addEngage } from "./engage.js";
 import { addOps } from "./ops.js";
+import { addWeb } from "./web.js";
 import * as logs from "aws-cdk-lib/aws-logs";
 
 /** Path to a handler file in services/src */
@@ -108,6 +109,9 @@ export class CoreStack extends Stack {
 
     // ---------- Likes, comments, notifications (step 5) ----------
     const engage = addEngage(this, { bus: pipeline.bus });
+
+    // ---------- Web hosting: S3 + CloudFront (step 7) ----------
+    addWeb(this);
 
     // ---------- Ops: alarms + ops topic (step 6) ----------
     addOps(this, {

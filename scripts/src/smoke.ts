@@ -22,6 +22,7 @@ import { localApiUrl } from "./urls.js";
 import { makePng } from "./png.js";
 import { seed } from "./seed.js";
 import { chaos, depth, inbox, redrive, purge, queueUrl } from "./ops.js";
+import { localCdnUrl } from "./deploy-web.js";
 import { SQSClient, PurgeQueueCommand } from "@aws-sdk/client-sqs";
 import { call, eventually, signUpOrIn, ensureProfile, uploadPhoto, waitForStatus as waitPost, type Session } from "./client.js";
 
@@ -241,6 +242,27 @@ async function engageFlow(c: Ctx) {
   ok(zedFeed.body.items.some((i: { postId: string }) => i.postId === postId), "engage: follow (via CDC) backfilled zed's feed");
 }
 
+async function cdnFlow() {
+  if (!CHROME) return console.log("⚠️  cdn: no Chrome/Edge found, skipped");
+  const base = localCdnUrl(readOutputs("ig-local-core").DistributionDomain);
+  const page404 = await fetch(`${base}/login`);
+  ok(page404.ok && (await page404.text()).includes("<html"), "cdn: /login served from S3 via CloudFront (extensionless key)");
+  const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 800, height: 900 });
+    await page.goto(`${base}/login`, { waitUntil: "networkidle0" });
+    await page.type('input[autocomplete="username"]', "bob");
+    await page.type('input[type="password"]', "password1");
+    await page.click('button[type="submit"]');
+    await page.waitForSelector(".feed-card img", { timeout: 30000 });
+    ok(page.url().startsWith(`${base}/feed`), "cdn: log in through CloudFront → feed (browser → Cognito CORS ok)");
+    await page.screenshot({ path: img("07-cdn.png") });
+  } finally {
+    await browser.close();
+  }
+}
+
 async function opsFlow() {
   await inbox(); // drain old alarm notifications
   await purge("notify");
@@ -265,7 +287,8 @@ async function main() {
   if (!only || only === "feed") await feedFlow(c);
   if (!only || only === "engage") await engageFlow(c);
   if (!only || only === "ui") await uiFlow();
-  if (only === "ops") await opsFlow(); // slow (~4 min): run explicitly with `npm run smoke ops`
+  if (only === "ops") await opsFlow();
+  if (only === "cdn") await cdnFlow(); // after `npm run deploy:web` // slow (~4 min): run explicitly with `npm run smoke ops`
 }
 
 main().catch((e) => { console.error(String(e.message ?? e)); process.exit(1); });

@@ -8,10 +8,12 @@
     "spike": "tsx src/spike-check.ts",
     "smoke": "tsx src/smoke.ts",
     "seed": "tsx src/seed.ts",
-    "ops": "tsx src/ops.ts"
+    "ops": "tsx src/ops.ts",
+    "deploy-web": "tsx src/deploy-web.ts"
   },
   "dependencies": {
     "@aws-sdk/client-cloudformation": "^3.1163.0",
+    "@aws-sdk/client-cloudfront": "^3.1163.0",
     "@aws-sdk/client-cloudwatch": "^3.1163.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.1163.0",
     "@aws-sdk/client-eventbridge": "^3.1163.0",

@@ -42,4 +42,9 @@ Tick boxes as you go.
 - [ ] Code: `infra/lib/ops.ts` (alarms), `scripts/src/ops.ts` (the ops CLI), `services/src/lib/log.ts`
 - [ ] Re-read notes §1: the two feed details added after the code review (pagination floor, celeb registry)
 
+## Step 7: Hosting (S3 + CloudFront, cache headers, OAC, Next.js SSR options)
+- [ ] [07-cdn-hosting.md](07-cdn-hosting.md): CDN, cache headers, and how companies run Next.js SSR on AWS
+- [ ] Code: `infra/lib/web.ts`, `scripts/src/web-plan.ts` (cache headers per file)
+- [ ] Try: `npm run deploy:web`, open the printed URL, log in as bob
+
 ## Every step has a "How big companies do it" table at the end. Read those for interview follow-ups.

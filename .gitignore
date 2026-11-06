@@ -5,3 +5,5 @@ out/
 *.log
 .env.local
 .superpowers/
+.env
+web/tsconfig.tsbuildinfo

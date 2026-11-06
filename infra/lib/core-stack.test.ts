@@ -224,6 +224,23 @@ describe("CoreStack", () => {
     });
   });
 
+  describe("web hosting (S3 + CloudFront)", () => {
+    it("private web bucket served only through CloudFront with Origin Access Control", () => {
+      t.hasResourceProperties("AWS::S3::Bucket", {
+        BucketName: "ig-local-web-000000000000",
+        PublicAccessBlockConfiguration: Match.objectLike({ BlockPublicAcls: true, RestrictPublicBuckets: true }),
+      });
+      t.resourceCountIs("AWS::CloudFront::OriginAccessControl", 1);
+      t.hasResourceProperties("AWS::CloudFront::Distribution", {
+        DistributionConfig: Match.objectLike({
+          DefaultRootObject: "index.html",
+          DefaultCacheBehavior: Match.objectLike({ ViewerProtocolPolicy: "redirect-to-https" }),
+          CustomErrorResponses: Match.arrayWith([Match.objectLike({ ErrorCode: 404, ResponsePagePath: "/404.html" })]),
+        }),
+      });
+    });
+  });
+
   it("uses no VPC, RDS or custom resources", () => {
     const types = Object.values(t.toJSON().Resources as Record<string, { Type: string }>).map((r) => r.Type);
     expect(types.filter((x) => /^(AWS::EC2::|AWS::RDS::|Custom::|AWS::CloudFormation::CustomResource)/.test(x))).toEqual([]);
