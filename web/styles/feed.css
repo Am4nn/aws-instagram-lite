@@ -1,0 +1,128 @@
+/* Area: /login + /feed (+ the / entry redirect). Owned by the feed/login page agent.
+   Unlayered: beats the primitives in globals.css. Use tokens from globals.css. */
+
+/* ---------- entry (/) ---------- */
+main.entry { display: grid; place-items: center; min-height: 60dvh; }
+
+/* ---------- login ---------- */
+main.login { padding-top: clamp(var(--s-8), 11vh, 112px); }
+
+.login-theme { position: fixed; top: var(--s-3); right: var(--s-3); }
+
+.login-card { gap: var(--s-3); padding: var(--s-8) var(--s-6) var(--s-6); margin-bottom: var(--s-3); }
+
+.login-brand {
+  display: flex; flex-direction: column; align-items: center; gap: var(--s-2);
+  color: var(--text); margin-bottom: var(--s-1);
+}
+.login-brand h1 { margin: 0; font-size: var(--fs-xl); font-weight: 700; letter-spacing: -0.02em; }
+
+.login-sub { text-align: center; font-size: var(--fs-sm); margin: 0 0 var(--s-1); min-height: 2.6em; text-wrap: balance; }
+
+.login-pw { position: relative; }
+.login-pw input { padding-right: 44px; }
+.login-eye { position: absolute; top: 2px; right: 2px; color: var(--muted); }
+.login-eye:hover { color: var(--text); }
+
+.login-card .error { margin: -6px 0 -2px; }
+.login-submit { height: 40px; }
+.login-submit .spinner {
+  border-color: color-mix(in srgb, var(--on-accent) 35%, transparent);
+  border-top-color: var(--on-accent);
+}
+
+.login-switch {
+  display: flex; justify-content: center; align-items: baseline; gap: 4px; flex-wrap: wrap;
+  margin: 0; padding: var(--s-4); font-size: var(--fs-sm); color: var(--muted);
+  border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface);
+}
+.login-switch button.link { font-size: var(--fs-sm); font-weight: 600; }
+
+.status {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  margin: var(--s-6) 0 0; min-height: 20px; color: var(--muted);
+}
+.dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--wait); }
+.status[data-state="ok"] .dot { background: var(--ok); }
+.status[data-state="down"] .dot { background: var(--down); }
+
+.hint { margin: 8px 0 0; color: var(--muted); font-size: 13px; word-break: break-all; }
+
+/* ---------- feed: find-a-user search ---------- */
+.find { position: relative; display: flex; align-items: center; margin: 0 0 var(--s-6); }
+.find-icon { position: absolute; left: 12px; color: var(--muted); pointer-events: none; }
+.find input[type="search"] {
+  height: 40px; padding: 0 44px 0 38px;
+  background: var(--surface-2); border-color: transparent; font-size: var(--fs-sm);
+}
+.find input[type="search"]:hover:not(:disabled) { border-color: var(--border-strong); }
+.find input[type="search"]:focus { background: var(--surface); border-color: var(--accent-text); }
+.find input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.find-go { position: absolute; right: 4px; width: 32px; height: 32px; color: var(--muted); }
+.find-go:hover { color: var(--text); }
+.find-go[hidden] { display: none; }
+
+/* ---------- feed: post card ---------- */
+.feed-card {
+  margin: 0 0 var(--s-4); padding-bottom: var(--s-4);
+  border-bottom: 1px solid var(--border);
+}
+.feed-card:last-of-type { border-bottom-color: transparent; }
+
+.feed-head { display: flex; align-items: center; gap: var(--s-2); height: 52px; min-width: 0; font-size: var(--fs-sm); }
+.feed-avatar { display: inline-flex; border-radius: 50%; }
+.feed-card .author {
+  color: var(--text); font-weight: 600; text-decoration: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.feed-card .author:hover { text-decoration: underline; text-underline-offset: 2px; }
+.feed-dot, .feed-time { color: var(--muted); flex: none; }
+
+.feed-media {
+  display: block; position: relative; width: 100%; aspect-ratio: 1 / 1; overflow: hidden;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm);
+}
+.feed-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.feed-media:focus-visible { outline-offset: 2px; }
+.feed-media-missing { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }
+
+.feed-card .actions { display: flex; align-items: center; gap: var(--s-4); height: 44px; padding: 0; margin-top: var(--s-1); }
+.feed-card .actions > * { margin: 0; }
+.feed-comment-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 36px;
+  color: var(--text); font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums;
+  border-radius: var(--r-sm); transition: opacity var(--dur) var(--ease);
+}
+.feed-comment-btn:hover { text-decoration: none; opacity: 0.65; }
+
+.feed-caption { margin: 0; font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere; }
+.feed-caption-name { color: var(--text); font-weight: 600; margin-right: 2px; }
+.feed-comments { display: inline-block; margin-top: var(--s-1); font-size: var(--fs-sm); }
+.feed-comments:hover { color: var(--text); text-decoration: none; }
+
+/* skeleton card: same boxes as the real one */
+.feed-card-skeleton .feed-media { border-color: transparent; }
+.feed-card-skeleton .actions { gap: var(--s-4); }
+.feed-card-skeleton .feed-caption { padding-top: 2px; }
+
+/* phones: photo runs edge to edge like the native app */
+@media (max-width: 767px) {
+  .feed-media { margin-inline: calc(-1 * var(--s-4)); width: calc(100% + 2 * var(--s-4)); border: 0; border-radius: 0; }
+  .feed-head { height: 48px; }
+}
+
+/* ---------- feed: states ---------- */
+.feed-note { text-align: center; font-size: var(--fs-sm); padding: var(--s-6) 0; }
+
+.feed-error {
+  display: flex; align-items: center; gap: var(--s-2); margin: 0 0 var(--s-4);
+  padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
+  border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface);
+  color: var(--text); font-size: var(--fs-sm);
+}
+.feed-error > svg { color: var(--danger); flex: none; }
+.feed-error > span { flex: 1; }
+.feed-error.first { margin-top: var(--s-6); }
+
+.more { height: 40px; margin-top: var(--s-2); }
+.more:disabled { opacity: 1; }
