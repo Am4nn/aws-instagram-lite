@@ -50,8 +50,20 @@ export type Post = {
   likeCount: number;
   commentCount: number;
   failReason?: string;
+  likedByMe?: boolean;
   thumbUrl?: string;
   fullUrl?: string;
 };
 
 export type FeedItem = Post & { author: { userId: string; username: string } };
+
+export type Comment = { commentId: string; userId: string; username: string; text: string; createdAt: string };
+export type Notif = {
+  id: string;
+  type: "PostLiked" | "PostCommented" | "UserFollowed";
+  actorId: string;
+  actorUsername: string;
+  postId?: string;
+  text?: string;
+  at: string;
+};

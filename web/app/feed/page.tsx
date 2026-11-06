@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { Nav } from "../../components/Nav";
+import { LikeButton } from "../../components/LikeButton";
 import { api, type FeedItem } from "../../lib/api";
 
 export default function Feed() {
@@ -46,6 +47,10 @@ export default function Feed() {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={p.fullUrl} alt={p.caption || "photo"} loading="lazy" />
             </Link>
+            <div className="actions">
+              <LikeButton postId={p.postId} liked={!!p.likedByMe} count={p.likeCount} />
+              <Link href={`/p?id=${p.postId}`} className="muted">💬 {p.commentCount}</Link>
+            </div>
             {p.caption && <p>{p.caption}</p>}
             <p className="muted small">{new Date(p.createdAt).toLocaleString()}</p>
           </article>
