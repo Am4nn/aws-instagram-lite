@@ -3,6 +3,9 @@ import { SNSClient, PublishCommand } from "@aws-sdk/client-sns";
 import { docClient, tableName } from "../lib/db.js";
 import { makeUsersRepo } from "../users/repo.js";
 import { makeNotifsRepo, type NewNotif, type NotifType } from "./repo.js";
+import { makeLogger } from "../lib/log.js";
+
+const log = makeLogger("notify");
 
 type Deps = {
   getUsername: (userId: string) => Promise<string>;
@@ -44,8 +47,9 @@ export function makeNotify(d: Deps) {
         const actorUsername = await d.getUsername(r.actorId);
         await d.put({ ...r, type, actorUsername, at: e.time, sourceKey: `${r.sourceKey}:${e.time}` });
         await d.publish(r.recipientId, `${actorUsername} ${phrase[type]}`, type);
+        log.info("notified", { type, recipientId: r.recipientId, actorId: r.actorId, postId: r.postId });
       } catch (err) {
-        console.error("notify failed", record.messageId, err);
+        log.error("notify failed", { messageId: record.messageId, error: err as Error });
         batchItemFailures.push({ itemIdentifier: record.messageId });
       }
     }

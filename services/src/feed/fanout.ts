@@ -4,6 +4,9 @@ import { docClient, tableName } from "../lib/db.js";
 import { makeUsersRepo } from "../users/repo.js";
 import { makePostsRepo } from "../posts/repo.js";
 import { makeFollowsRepo } from "../social/repo.js";
+import { makeLogger } from "../lib/log.js";
+
+const log = makeLogger("fanout");
 
 export type FeedItem = { ownerId: string; postId: string; authorId: string; createdAt: string };
 type PostRef = { postId: string; userId: string; createdAt: string };
@@ -37,8 +40,16 @@ export function makeFanout(d: Deps) {
     const post = await d.getPost(postId);
     if (!post) return;
     await d.writeFeed([item(post.userId, post)]); // you see your own posts
-    if (await isCeleb(post.userId)) return;
-    for await (const page of d.followers(post.userId)) await d.writeFeed(page.map((f) => item(f, post)));
+    if (await isCeleb(post.userId)) {
+      log.info("celeb post: no fan-out (pulled at read time)", { postId, authorId: post.userId });
+      return;
+    }
+    let followers = 0;
+    for await (const page of d.followers(post.userId)) {
+      await d.writeFeed(page.map((f) => item(f, post)));
+      followers += page.length;
+    }
+    log.info("fanned out", { postId, authorId: post.userId, followers });
   }
 
   async function userFollowed({ followerId, followeeId }: { followerId: string; followeeId: string }) {
@@ -55,7 +66,7 @@ export function makeFanout(d: Deps) {
         if (e["detail-type"] === "PostPublished") await postPublished(e.detail);
         else if (e["detail-type"] === "UserFollowed") await userFollowed(e.detail);
       } catch (err) {
-        console.error("fanout failed", record.messageId, err);
+        log.error("fanout failed", { messageId: record.messageId, error: err as Error });
         batchItemFailures.push({ itemIdentifier: record.messageId });
       }
     }

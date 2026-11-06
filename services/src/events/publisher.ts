@@ -3,6 +3,9 @@ import { unmarshall } from "@aws-sdk/util-dynamodb";
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";
 import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
 import { toDomainEvent, type DomainEvent } from "./map.js";
+import { makeLogger } from "../lib/log.js";
+
+const log = makeLogger("cdc-publisher");
 
 type Put = (entries: DomainEvent[]) => Promise<{ ok: boolean }[]>;
 
@@ -22,7 +25,11 @@ export function makePublisher(put: Put) {
       const chunk = mapped.slice(i, i + 10);
       const results = await put(chunk.map((m) => m.event)).catch(() => chunk.map(() => ({ ok: false })));
       const failed = results.findIndex((r) => !r.ok);
-      if (failed >= 0) return { batchItemFailures: [{ itemIdentifier: chunk[failed].seq }] };
+      if (failed >= 0) {
+        log.error("publish failed; stream will retry from this record", { sequenceNumber: chunk[failed].seq });
+        return { batchItemFailures: [{ itemIdentifier: chunk[failed].seq }] };
+      }
+      log.info("published", { count: chunk.length, types: chunk.map((m) => m.event.detailType) });
     }
     return { batchItemFailures: [] };
   };
