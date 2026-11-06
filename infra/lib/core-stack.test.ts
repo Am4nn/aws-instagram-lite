@@ -67,6 +67,13 @@ describe("CoreStack", () => {
     });
   });
 
+  it("exposes the profile routes behind the JWT authorizer, health stays public", () => {
+    for (const RouteKey of ["GET /me", "PUT /me", "GET /users/{username}"]) {
+      t.hasResourceProperties("AWS::ApiGatewayV2::Route", { RouteKey, AuthorizationType: "JWT" });
+    }
+    t.hasResourceProperties("AWS::ApiGatewayV2::Route", { RouteKey: "GET /health", AuthorizationType: "NONE" });
+  });
+
   it("uses no VPC, RDS or custom resources", () => {
     const types = Object.values(t.toJSON().Resources as Record<string, { Type: string }>).map((r) => r.Type);
     expect(types.filter((x) => /^(AWS::EC2::|AWS::RDS::|Custom::|AWS::CloudFormation::CustomResource)/.test(x))).toEqual([]);
