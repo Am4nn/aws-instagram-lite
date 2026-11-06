@@ -11,13 +11,18 @@ export default function Feed() {
   const [next, setNext] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
   const [find, setFind] = useState("");
+  const [error, setError] = useState("");
 
   async function load(cursor?: string) {
     setLoading(true);
+    setError("");
     try {
       const r = await api<{ items: FeedItem[]; next?: string }>(`/feed${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
       setItems((prev) => (cursor ? [...(prev ?? []), ...r.items] : r.items));
       setNext(r.next);
+    } catch {
+      setError(cursor ? "Couldn't load more posts." : "Couldn't load your feed.");
+      if (!cursor) setItems((prev) => prev ?? []);
     } finally {
       setLoading(false);
     }
@@ -39,7 +44,8 @@ export default function Feed() {
           <button type="submit">Go</button>
         </form>
         {items === null && <p className="muted">Loading…</p>}
-        {items?.length === 0 && <p className="muted">Your feed is empty. Follow someone to see their posts here.</p>}
+        {error && <p className="error">{error} <button className="link" onClick={() => load()}>Try again</button></p>}
+        {items?.length === 0 && !error && !next && <p className="muted">Your feed is empty. Follow someone to see their posts here.</p>}
         {items?.map((p) => (
           <article key={p.postId} className="feed-card">
             <Link href={`/u?name=${p.author.username}`} className="author">@{p.author.username}</Link>
@@ -55,6 +61,7 @@ export default function Feed() {
             <p className="muted small">{new Date(p.createdAt).toLocaleString()}</p>
           </article>
         ))}
+        {items?.length === 0 && next && !error && <p className="muted">Nothing new here yet…</p>}
         {next && (
           <button className="more" onClick={() => load(next)} disabled={loading}>{loading ? "Loading…" : "Load more"}</button>
         )}

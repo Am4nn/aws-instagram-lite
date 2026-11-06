@@ -14,25 +14,30 @@ function UserProfile() {
   const name = useSearchParams().get("name") ?? "";
   const [profile, setProfile] = useState<PublicProfile | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     api<PublicProfile>(`/users/${encodeURIComponent(name)}`)
       .then(setProfile)
-      .catch((e) => { if (e instanceof ApiError && e.status === 404) setProfile(null); });
+      .catch((e) => (e instanceof ApiError && e.status === 404 ? setProfile(null) : setError("Couldn't load this profile.")));
   }, [name]);
 
+  if (error && profile === undefined) return <p className="error">{error}</p>;
   if (profile === undefined) return <p className="muted">Loading…</p>;
   if (profile === null) return <p>No user called @{name}.</p>;
 
   async function toggleFollow() {
     if (!profile) return;
     setBusy(true);
+    setError("");
     try {
       const r = await api<{ following: boolean }>(`/users/${profile.userId}/follow`, {
         method: profile.isFollowing ? "DELETE" : "POST",
       });
       const delta = r.following === profile.isFollowing ? 0 : r.following ? 1 : -1;
       setProfile({ ...profile, isFollowing: r.following, followerCount: profile.followerCount + delta });
+    } catch {
+      setError("Couldn't update follow. Try again.");
     } finally {
       setBusy(false);
     }
@@ -48,6 +53,7 @@ function UserProfile() {
           </button>
         )}
       </div>
+      {error && <p className="error">{error}</p>}
       <p>{profile.bio || <span className="muted">No bio yet.</span>}</p>
       <p className="counts">
         <span><b>{profile.postCount}</b> posts</span>

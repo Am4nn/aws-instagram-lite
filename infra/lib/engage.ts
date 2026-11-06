@@ -4,7 +4,7 @@ import * as sns from "aws-cdk-lib/aws-sns";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
-import { DynamoEventSource, SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
+import { DynamoEventSource, SqsEventSource, SqsDlq } from "aws-cdk-lib/aws-lambda-event-sources";
 import type { CoreStack } from "./core-stack.js";
 
 /**
@@ -30,12 +30,15 @@ export function addEngage(stack: CoreStack, opts: { bus: events.EventBus }) {
     env: { EVENT_BUS: opts.bus.eventBusName }, tableAccess: false,
   });
   opts.bus.grantPutEventsTo(publisher);
+  // After retries run out, the failed records' positions go to this DLQ (alarmed in ops), never silently dropped.
+  const cdcDlq = new sqs.Queue(stack, "CdcDlq", { queueName: `${prefix}-cdc-dlq`, retentionPeriod: Duration.days(14) });
   publisher.addEventSource(new DynamoEventSource(stack.table, {
     startingPosition: lambda.StartingPosition.LATEST,
     batchSize: 50,
     reportBatchItemFailures: true,
-    retryAttempts: 5,
-    bisectBatchOnError: true,
+    retryAttempts: 10,
+    maxRecordAge: Duration.hours(1),
+    onFailure: new SqsDlq(cdcDlq),
     filters: [lambda.FilterCriteria.filter({ eventName: lambda.FilterRule.isEqual("INSERT") })],
   }));
 
@@ -61,5 +64,5 @@ export function addEngage(stack: CoreStack, opts: { bus: events.EventBus }) {
   stack.route("GET", "/notifications", notifications);
   stack.route("POST", "/notifications/read", notifications);
 
-  return { topic, notifyQueue: queue, notifyDlq: dlq };
+  return { topic, notifyQueue: queue, notifyDlq: dlq, cdcDlq };
 }

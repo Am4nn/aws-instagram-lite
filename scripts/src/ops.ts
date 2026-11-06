@@ -17,7 +17,7 @@ import { CloudWatchClient, DescribeAlarmsCommand } from "@aws-sdk/client-cloudwa
 import { assertFlociUp, useLocalEnv } from "./env.js";
 
 const PREFIX = "ig-local";
-export const WORKER_QUEUES = ["uploads", "fanout", "notify"] as const;
+export const WORKER_QUEUES = ["uploads", "fanout", "notify", "cdc"] as const;
 // useQueueUrlAsEndpoint: false → keep the configured endpoint (Floci reports 127.0.0.1 in queue URLs)
 const sqs = () => new SQSClient({ useQueueUrlAsEndpoint: false });
 

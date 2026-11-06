@@ -44,12 +44,14 @@ describe("notify worker", () => {
     expect(stored).toEqual([]);
   });
 
-  it("derives a stable sourceKey per event (so redelivery overwrites instead of duplicating)", async () => {
+  it("keys + timestamps notifications from the source row, so a re-published event (new EventBridge time) is the same notification", async () => {
     const { notify, stored } = setup();
-    const m = msg("PostCommented", { postId: "p1", authorId: "alice", actorId: "carol", commentId: "c1", text: "x" });
-    await notify(batch(m));
-    await notify(batch(m));
+    const detail = { postId: "p1", authorId: "alice", actorId: "carol", commentId: "c1", text: "x", createdAt: "2026-01-01T00:00:00.123Z" };
+    await notify(batch(msg("PostCommented", detail, "m0", "2026-01-01T00:00:01Z")));
+    await notify(batch(msg("PostCommented", detail, "m1", "2026-01-01T00:05:00Z"))); // stream retry re-published it
     expect(stored[0].sourceKey).toBe(stored[1].sourceKey);
+    expect(stored[0].at).toBe("2026-01-01T00:00:00.123Z");
+    expect(stored[1].at).toBe(stored[0].at);
   });
 
   it("reports only broken messages as failures", async () => {

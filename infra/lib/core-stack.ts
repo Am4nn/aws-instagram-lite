@@ -111,7 +111,7 @@ export class CoreStack extends Stack {
 
     // ---------- Ops: alarms + ops topic (step 6) ----------
     addOps(this, {
-      dlqs: { uploads: pipeline.dlq, fanout: social.fanoutDlq, notify: engage.notifyDlq },
+      dlqs: { uploads: pipeline.dlq, fanout: social.fanoutDlq, notify: engage.notifyDlq, cdc: engage.cdcDlq },
       pipeline: pipeline.machine,
     });
 

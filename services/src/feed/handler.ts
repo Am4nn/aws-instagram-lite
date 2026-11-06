@@ -79,7 +79,8 @@ function realDeps(): FeedDeps {
   return {
     threshold: Number(process.env.CELEB_THRESHOLD ?? 10000),
     cursorKey: () => (secret ??= sm.send(new GetSecretValueCommand({ SecretId: process.env.CURSOR_SECRET_ARN }))
-      .then((r) => r.SecretString!)),
+      .then((r) => r.SecretString!)
+      .catch((e) => { secret = undefined; throw e; })), // don't cache a failure for the container's lifetime
     listFollowing: (me) => follows.listFollowing(me),
     followerCounts: async (ids) => {
       const items = await batchGet(doc, table, ids.map(profileKey));

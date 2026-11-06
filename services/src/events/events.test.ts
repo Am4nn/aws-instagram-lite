@@ -6,19 +6,19 @@ import { makePublisher } from "./publisher.js";
 
 describe("toDomainEvent (new table item → domain event)", () => {
   it("LIKE item → PostLiked for the post author", () => {
-    expect(toDomainEvent({ pk: "POST#p1", sk: "LIKE#carol", postId: "p1", userId: "carol", postAuthorId: "alice" }))
-      .toEqual({ source: "ig.engage", detailType: "PostLiked", detail: { postId: "p1", authorId: "alice", actorId: "carol" } });
+    expect(toDomainEvent({ pk: "POST#p1", sk: "LIKE#carol", postId: "p1", userId: "carol", postAuthorId: "alice", createdAt: "T1" }))
+      .toEqual({ source: "ig.engage", detailType: "PostLiked", detail: { postId: "p1", authorId: "alice", actorId: "carol", createdAt: "T1" } });
   });
 
   it("COMMENT item → PostCommented with the text", () => {
-    expect(toDomainEvent({ pk: "POST#p1", sk: "COMMENT#t#c1", postId: "p1", commentId: "c1", userId: "carol", postAuthorId: "alice", text: "nice" }))
+    expect(toDomainEvent({ pk: "POST#p1", sk: "COMMENT#t#c1", postId: "p1", commentId: "c1", userId: "carol", postAuthorId: "alice", text: "nice", createdAt: "T2" }))
       .toEqual({ source: "ig.engage", detailType: "PostCommented",
-        detail: { postId: "p1", authorId: "alice", actorId: "carol", commentId: "c1", text: "nice" } });
+        detail: { postId: "p1", authorId: "alice", actorId: "carol", commentId: "c1", text: "nice", createdAt: "T2" } });
   });
 
   it("FOLLOWER item → UserFollowed (same shape step 4's fan-out consumes)", () => {
-    expect(toDomainEvent({ pk: "USER#alice", sk: "FOLLOWER#bob", userId: "bob" }))
-      .toEqual({ source: "ig.social", detailType: "UserFollowed", detail: { followerId: "bob", followeeId: "alice" } });
+    expect(toDomainEvent({ pk: "USER#alice", sk: "FOLLOWER#bob", userId: "bob", createdAt: "T3" }))
+      .toEqual({ source: "ig.social", detailType: "UserFollowed", detail: { followerId: "bob", followeeId: "alice", createdAt: "T3" } });
   });
 
   it("everything else (profiles, posts, feed items, FOLLOWS edges) → null", () => {

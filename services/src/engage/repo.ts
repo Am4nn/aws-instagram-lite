@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import {
-  BatchGetCommand, DynamoDBDocumentClient, QueryCommand, TransactWriteCommand,
+  BatchGetCommand, DynamoDBDocumentClient, GetCommand, QueryCommand, TransactWriteCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { postKey, type Post } from "../posts/repo.js";
+import { conditionalWrite } from "../lib/tx.js";
 
 export type Comment = { commentId: string; postId: string; userId: string; username: string; text: string; createdAt: string };
 
 export const likeKey = (postId: string, userId: string) => ({ pk: `POST#${postId}`, sk: `LIKE#${userId}` });
-const cancelled = (e: unknown) => (e as Error).name === "TransactionCanceledException";
 
 /** Comment page cursor: base64url of the last sort key (opaque to clients). */
 const encode = (sk: string) => Buffer.from(sk).toString("base64url");
@@ -28,32 +28,27 @@ export function makeEngageRepo(doc: DynamoDBDocumentClient, table: string) {
    * true = new like. The like item and the counter change in one transaction, so the count is
    * always exact. The item also stores the post author, so the change stream can notify them.
    */
+  const likeExists = async (postId: string, userId: string) =>
+    Boolean((await doc.send(new GetCommand({ TableName: table, Key: likeKey(postId, userId), ConsistentRead: true }))).Item);
+
   async function like(post: Post, userId: string): Promise<boolean> {
-    try {
-      await doc.send(new TransactWriteCommand({ TransactItems: [
+    return conditionalWrite(() =>
+      doc.send(new TransactWriteCommand({ TransactItems: [
         { Put: { TableName: table, ConditionExpression: "attribute_not_exists(pk)",
           Item: { ...likeKey(post.postId, userId), type: "like", postId: post.postId, userId,
             postAuthorId: post.userId, createdAt: new Date().toISOString() } } },
         bump(post.postId, "likeCount", 1),
-      ] }));
-      return true;
-    } catch (e) {
-      if (cancelled(e)) return false;
-      throw e;
-    }
+      ] })),
+    () => likeExists(post.postId, userId));
   }
 
   async function unlike(postId: string, userId: string): Promise<boolean> {
-    try {
-      await doc.send(new TransactWriteCommand({ TransactItems: [
+    return conditionalWrite(() =>
+      doc.send(new TransactWriteCommand({ TransactItems: [
         { Delete: { TableName: table, Key: likeKey(postId, userId), ConditionExpression: "attribute_exists(pk)" } },
         bump(postId, "likeCount", -1),
-      ] }));
-      return true;
-    } catch (e) {
-      if (cancelled(e)) return false;
-      throw e;
-    }
+      ] })),
+    async () => !(await likeExists(postId, userId)));
   }
 
   /** Which of these posts has this user liked? One BatchGet for a whole feed page. */

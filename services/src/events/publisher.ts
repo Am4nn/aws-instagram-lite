@@ -23,7 +23,10 @@ export function makePublisher(put: Put) {
     }
     for (let i = 0; i < mapped.length; i += 10) { // PutEvents takes up to 10 entries
       const chunk = mapped.slice(i, i + 10);
-      const results = await put(chunk.map((m) => m.event)).catch(() => chunk.map(() => ({ ok: false })));
+      const results = await put(chunk.map((m) => m.event)).catch((err) => {
+        log.error("PutEvents call failed", { error: err as Error });
+        return chunk.map(() => ({ ok: false }));
+      });
       const failed = results.findIndex((r) => !r.ok);
       if (failed >= 0) {
         log.error("publish failed; stream will retry from this record", { sequenceNumber: chunk[failed].seq });

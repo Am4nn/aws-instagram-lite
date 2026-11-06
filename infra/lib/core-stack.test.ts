@@ -153,8 +153,10 @@ describe("CoreStack", () => {
         Environment: { Variables: Match.objectLike({ CELEB_THRESHOLD: "3", CURSOR_SECRET_ARN: Match.anyValue() }) },
       });
       t.hasResourceProperties("AWS::Lambda::Function", {
-        FunctionName: "ig-local-fanout", Environment: { Variables: Match.objectLike({ CELEB_THRESHOLD: "3" }) },
+        FunctionName: "ig-local-fanout", Timeout: 60, Environment: { Variables: Match.objectLike({ CELEB_THRESHOLD: "3" }) },
       });
+      // one post per invocation: a big fan-out can't time out (and DLQ) its neighbours in the batch
+      t.hasResourceProperties("AWS::Lambda::EventSourceMapping", { BatchSize: 1, FunctionName: Match.objectLike({ Ref: Match.stringLikeRegexp("Fnfanout") }) });
     });
 
     it("adds follow + feed routes behind JWT", () => {
@@ -171,7 +173,11 @@ describe("CoreStack", () => {
         FunctionName: Match.anyValue(),
         FilterCriteria: { Filters: [{ Pattern: JSON.stringify({ eventName: ["INSERT"] }) }] },
         FunctionResponseTypes: ["ReportBatchItemFailures"],
+        DestinationConfig: { OnFailure: { Destination: Match.anyValue() } }, // never drop events silently
+        MaximumRecordAgeInSeconds: Match.anyValue(),
       });
+      t.hasResourceProperties("AWS::SQS::Queue", { QueueName: "ig-local-cdc-dlq" });
+      t.hasResourceProperties("AWS::CloudWatch::Alarm", { AlarmName: "ig-local-cdc-dlq-not-empty" });
     });
 
     it("routes PostLiked/PostCommented/UserFollowed to the notify queue and has an SNS topic", () => {

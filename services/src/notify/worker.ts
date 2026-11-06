@@ -16,14 +16,18 @@ type Deps = {
 
 type Routed = { recipientId: string; actorId: string; postId?: string; text?: string; sourceKey: string };
 
+/**
+ * sourceKey identifies the *row* that caused the event (like = post+actor+time liked, comment = its id),
+ * never the EventBridge publish time: a stream retry re-publishes with a new time but the same row.
+ */
 function route(type: string, d: Record<string, string>): Routed | null {
   switch (type) {
     case "PostLiked":
-      return { recipientId: d.authorId, actorId: d.actorId, postId: d.postId, sourceKey: `like:${d.postId}:${d.actorId}` };
+      return { recipientId: d.authorId, actorId: d.actorId, postId: d.postId, sourceKey: `like:${d.postId}:${d.actorId}:${d.createdAt}` };
     case "PostCommented":
       return { recipientId: d.authorId, actorId: d.actorId, postId: d.postId, text: d.text, sourceKey: `comment:${d.commentId}` };
     case "UserFollowed":
-      return { recipientId: d.followeeId, actorId: d.followerId, sourceKey: `follow:${d.followerId}:${d.followeeId}` };
+      return { recipientId: d.followeeId, actorId: d.followerId, sourceKey: `follow:${d.followerId}:${d.followeeId}:${d.createdAt}` };
     default:
       return null;
   }
@@ -45,7 +49,7 @@ export function makeNotify(d: Deps) {
         const r = route(type, e.detail ?? {});
         if (!r || r.recipientId === r.actorId) continue; // unknown event, or your own action
         const actorUsername = await d.getUsername(r.actorId);
-        await d.put({ ...r, type, actorUsername, at: e.time, sourceKey: `${r.sourceKey}:${e.time}` });
+        await d.put({ ...r, type, actorUsername, at: e.detail?.createdAt ?? e.time });
         await d.publish(r.recipientId, `${actorUsername} ${phrase[type]}`, type);
         log.info("notified", { type, recipientId: r.recipientId, actorId: r.actorId, postId: r.postId });
       } catch (err) {

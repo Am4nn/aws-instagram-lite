@@ -35,7 +35,7 @@ export function addSocial(stack: CoreStack, opts: { bus: events.EventBus; media:
   const dlq = new sqs.Queue(stack, "FanoutDlq", { queueName: `${prefix}-fanout-dlq`, retentionPeriod: Duration.days(14) });
   const queue = new sqs.Queue(stack, "FanoutQueue", {
     queueName: `${prefix}-fanout`,
-    visibilityTimeout: Duration.seconds(180), // 6× the Lambda timeout, as AWS recommends
+    visibilityTimeout: Duration.seconds(360), // 6× the Lambda timeout, as AWS recommends
     deadLetterQueue: { queue: dlq, maxReceiveCount: 3 },
   });
   new events.Rule(stack, "FanoutRule", {
@@ -44,8 +44,10 @@ export function addSocial(stack: CoreStack, opts: { bus: events.EventBus; media:
     eventPattern: { detailType: ["PostPublished", "UserFollowed"] },
     targets: [new targets.SqsQueue(queue)],
   });
-  const fanout = stack.addFunction("fanout", "feed/fanout.ts", { env: { CELEB_THRESHOLD: threshold }, timeout: 30 });
-  fanout.addEventSource(new SqsEventSource(queue, { batchSize: 10, reportBatchItemFailures: true }));
+  const fanout = stack.addFunction("fanout", "feed/fanout.ts", { env: { CELEB_THRESHOLD: threshold }, timeout: 60 });
+  // batchSize 1: one post's fan-out (up to threshold-1 followers ≈ 400 BatchWrites on AWS) per invocation,
+  // so a slow one can't time out the others in its batch.
+  fanout.addEventSource(new SqsEventSource(queue, { batchSize: 1, reportBatchItemFailures: true }));
 
   // ---------- read the feed ----------
   const feed = stack.addFunction("feed", "feed/handler.ts", {

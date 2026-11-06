@@ -2,13 +2,13 @@ import {
   DynamoDBDocumentClient, GetCommand, QueryCommand, TransactWriteCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { profileKey } from "../users/repo.js";
+import { conditionalWrite } from "../lib/tx.js";
 
 // A follow is two items (one per direction) so both "who do I follow" and
 // "who follows me" are single-partition queries.
 export const followsKey = (me: string, other: string) => ({ pk: `USER#${me}`, sk: `FOLLOWS#${other}` });
 export const followerKey = (other: string, me: string) => ({ pk: `USER#${other}`, sk: `FOLLOWER#${me}` });
 
-const cancelled = (e: unknown) => (e as Error).name === "TransactionCanceledException";
 
 export type FollowsRepo = ReturnType<typeof makeFollowsRepo>;
 
@@ -23,38 +23,36 @@ export function makeFollowsRepo(doc: DynamoDBDocumentClient, table: string) {
   /** true = new follow. Both edges + both counters in one transaction, so counts can't drift. */
   async function follow(me: string, other: string): Promise<boolean> {
     const now = new Date().toISOString();
-    try {
-      await doc.send(new TransactWriteCommand({ TransactItems: [
+    return conditionalWrite(() =>
+      doc.send(new TransactWriteCommand({ TransactItems: [
         { Put: { TableName: table, Item: { ...followsKey(me, other), userId: other, createdAt: now },
           ConditionExpression: "attribute_not_exists(pk)" } },
         { Put: { TableName: table, Item: { ...followerKey(other, me), userId: me, createdAt: now } } },
         counter(me, "followingCount", 1),
         counter(other, "followerCount", 1),
-      ] }));
-      return true;
-    } catch (e) {
-      if (cancelled(e)) return false; // already following (or a profile is missing)
-      throw e;
-    }
+      ] })),
+    // already following (or a profile is missing, which retrying won't fix)
+    async () => (await isFollowing(me, other)) || !(await bothProfilesExist(me, other)));
   }
 
   async function unfollow(me: string, other: string): Promise<boolean> {
-    try {
-      await doc.send(new TransactWriteCommand({ TransactItems: [
+    return conditionalWrite(() =>
+      doc.send(new TransactWriteCommand({ TransactItems: [
         { Delete: { TableName: table, Key: followsKey(me, other), ConditionExpression: "attribute_exists(pk)" } },
         { Delete: { TableName: table, Key: followerKey(other, me) } },
         counter(me, "followingCount", -1),
         counter(other, "followerCount", -1),
-      ] }));
-      return true;
-    } catch (e) {
-      if (cancelled(e)) return false;
-      throw e;
-    }
+      ] })),
+    async () => !(await isFollowing(me, other)));
+  }
+
+  async function bothProfilesExist(a: string, b: string) {
+    const get = (id: string) => doc.send(new GetCommand({ TableName: table, Key: profileKey(id) })).then((r) => Boolean(r.Item));
+    return (await get(a)) && (await get(b));
   }
 
   async function isFollowing(me: string, other: string): Promise<boolean> {
-    const { Item } = await doc.send(new GetCommand({ TableName: table, Key: followsKey(me, other) }));
+    const { Item } = await doc.send(new GetCommand({ TableName: table, Key: followsKey(me, other), ConsistentRead: true }));
     return Boolean(Item);
   }
 
