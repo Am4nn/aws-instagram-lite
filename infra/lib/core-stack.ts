@@ -8,7 +8,9 @@ import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as apigwv2 from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import { HttpJwtAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
+import * as iam from "aws-cdk-lib/aws-iam";
 import { cognitoIssuer, type StageConfig } from "./config.js";
+import { addPipeline } from "./pipeline.js";
 
 /** Path to a handler file in services/src */
 export const servicePath = (file: string) =>
@@ -23,11 +25,11 @@ export class CoreStack extends Stack {
   readonly api: apigwv2.HttpApi;
   readonly userPool: cognito.UserPool;
   readonly authorizer: HttpJwtAuthorizer;
-  private readonly config: StageConfig;
+  readonly stageConfig: StageConfig;
 
   constructor(scope: Construct, id: string, props: CoreStackProps) {
     super(scope, id, props);
-    this.config = props.config;
+    this.stageConfig = props.config;
     const { prefix } = props.config;
 
     // ---------- Data: one table for everything (single-table design) ----------
@@ -85,6 +87,17 @@ export class CoreStack extends Stack {
     this.route("PUT", "/me", users);
     this.route("GET", "/users/{username}", users);
 
+    // ---------- Posts + upload pipeline (step 3) ----------
+    const pipeline = addPipeline(this);
+    const posts = this.addFunction("posts", "posts/handler.ts", {
+      env: { UPLOADS_BUCKET: pipeline.uploadsName, MEDIA_BUCKET: pipeline.media.bucketName },
+    });
+    posts.addToRolePolicy(new iam.PolicyStatement({ actions: ["s3:PutObject"], resources: [`${pipeline.uploadsArn}/*`] }));
+    pipeline.media.grantRead(posts);
+    this.route("POST", "/posts", posts);
+    this.route("GET", "/posts/{id}", posts);
+    this.route("GET", "/users/{userId}/posts", posts);
+
     new CfnOutput(this, "ApiUrl", { value: this.api.apiEndpoint });
     new CfnOutput(this, "TableName", { value: this.table.tableName });
     new CfnOutput(this, "UserPoolId", { value: this.userPool.userPoolId });
@@ -93,15 +106,16 @@ export class CoreStack extends Stack {
 
   /** A Lambda from services/src with STAGE + TABLE_NAME env and (by default) table read/write. */
   addFunction(
-    name: string, entry: string, opts: { env?: Record<string, string>; tableAccess?: boolean } = {},
+    name: string, entry: string,
+    opts: { env?: Record<string, string>; tableAccess?: boolean; memorySize?: number; timeout?: number } = {},
   ): NodejsFunction {
     const fn = new NodejsFunction(this, `Fn-${name}`, {
-      functionName: `${this.config.prefix}-${name}`,
+      functionName: `${this.stageConfig.prefix}-${name}`,
       entry: servicePath(entry),
       runtime: lambda.Runtime.NODEJS_22_X,
-      memorySize: 256,
-      timeout: Duration.seconds(10),
-      environment: { STAGE: this.config.stage, TABLE_NAME: this.table.tableName, ...opts.env },
+      memorySize: opts.memorySize ?? 256,
+      timeout: Duration.seconds(opts.timeout ?? 10),
+      environment: { STAGE: this.stageConfig.stage, TABLE_NAME: this.table.tableName, ...opts.env },
       bundling: { minify: true },
     });
     if (opts.tableAccess !== false) this.table.grantReadWriteData(fn);

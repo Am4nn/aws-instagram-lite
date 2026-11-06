@@ -8,7 +8,7 @@ function synth() {
   // Skip esbuild bundling in unit tests; the deploy exercises real bundling.
   const app = new App({ context: { "aws:cdk:bundling-stacks": [] } });
   const config = loadConfig("local", { AWS_ENDPOINT_URL: "http://localhost:4566" });
-  const stack = new CoreStack(app, "ig-local-core", { config });
+  const stack = new CoreStack(app, "ig-local-core", { config, env: { account: "000000000000", region: "us-east-1" } });
   return Template.fromStack(stack);
 }
 
@@ -72,6 +72,42 @@ describe("CoreStack", () => {
       t.hasResourceProperties("AWS::ApiGatewayV2::Route", { RouteKey, AuthorizationType: "JWT" });
     }
     t.hasResourceProperties("AWS::ApiGatewayV2::Route", { RouteKey: "GET /health", AuthorizationType: "NONE" });
+  });
+
+  describe("upload pipeline", () => {
+    it("uploads bucket (globally unique name) notifies SQS natively and allows browser PUTs", () => {
+      t.hasResourceProperties("AWS::S3::Bucket", {
+        BucketName: "ig-local-uploads-000000000000",
+        NotificationConfiguration: { QueueConfigurations: [Match.objectLike({ Event: "s3:ObjectCreated:*" })] },
+        CorsConfiguration: { CorsRules: [Match.objectLike({ AllowedMethods: Match.arrayWith(["PUT"]) })] },
+      });
+      t.hasResourceProperties("AWS::S3::Bucket", { BucketName: "ig-local-media-000000000000" });
+    });
+
+    it("uploads queue sends poison messages to a DLQ after 3 tries", () => {
+      t.hasResourceProperties("AWS::SQS::Queue", {
+        QueueName: "ig-local-uploads",
+        RedrivePolicy: { maxReceiveCount: 3, deadLetterTargetArn: Match.anyValue() },
+      });
+      t.hasResourceProperties("AWS::SQS::Queue", { QueueName: "ig-local-uploads-dlq" });
+    });
+
+    it("has a state machine with a catch path, plus the event bus", () => {
+      const machines = t.findResources("AWS::StepFunctions::StateMachine");
+      const def = JSON.stringify(Object.values(machines)[0]);
+      for (const s of ["Validate", "Resize", "Save", "Publish", "MarkFailed", "Catch"]) expect(def).toContain(s);
+      t.hasResourceProperties("AWS::Events::EventBus", { Name: "ig-local-bus" });
+    });
+
+    it("gives the resize Lambda room for images", () => {
+      t.hasResourceProperties("AWS::Lambda::Function", { FunctionName: "ig-local-resize", MemorySize: 1024, Timeout: 30 });
+    });
+
+    it("adds the posts routes behind JWT", () => {
+      for (const RouteKey of ["POST /posts", "GET /posts/{id}", "GET /users/{userId}/posts"]) {
+        t.hasResourceProperties("AWS::ApiGatewayV2::Route", { RouteKey, AuthorizationType: "JWT" });
+      }
+    });
   });
 
   it("uses no VPC, RDS or custom resources", () => {
