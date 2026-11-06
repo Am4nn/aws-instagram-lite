@@ -12,6 +12,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import { cognitoIssuer, type StageConfig } from "./config.js";
 import { addPipeline } from "./pipeline.js";
 import { addSocial } from "./social.js";
+import { addEngage } from "./engage.js";
 
 /** Path to a handler file in services/src */
 export const servicePath = (file: string) =>
@@ -40,6 +41,7 @@ export class CoreStack extends Stack {
       sortKey: { name: "sk", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       timeToLiveAttribute: "ttl",
+      stream: dynamodb.StreamViewType.NEW_IMAGE, // change data capture → events (step 5)
       removalPolicy: RemovalPolicy.DESTROY,
     });
     this.table.addGlobalSecondaryIndex({
@@ -101,6 +103,9 @@ export class CoreStack extends Stack {
 
     // ---------- Follow + feed (step 4) ----------
     addSocial(this, { bus: pipeline.bus, media: pipeline.media });
+
+    // ---------- Likes, comments, notifications (step 5) ----------
+    addEngage(this, { bus: pipeline.bus });
 
     new CfnOutput(this, "ApiUrl", { value: this.api.apiEndpoint });
     new CfnOutput(this, "TableName", { value: this.table.tableName });

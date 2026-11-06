@@ -164,6 +164,32 @@ describe("CoreStack", () => {
     });
   });
 
+  describe("likes, comments, notifications", () => {
+    it("streams new table items (CDC) to the events Lambda, INSERTs only", () => {
+      t.hasResourceProperties("AWS::DynamoDB::Table", { StreamSpecification: { StreamViewType: "NEW_IMAGE" } });
+      t.hasResourceProperties("AWS::Lambda::EventSourceMapping", {
+        FunctionName: Match.anyValue(),
+        FilterCriteria: { Filters: [{ Pattern: JSON.stringify({ eventName: ["INSERT"] }) }] },
+        FunctionResponseTypes: ["ReportBatchItemFailures"],
+      });
+    });
+
+    it("routes PostLiked/PostCommented/UserFollowed to the notify queue and has an SNS topic", () => {
+      t.hasResourceProperties("AWS::Events::Rule", {
+        EventPattern: { "detail-type": ["PostLiked", "PostCommented", "UserFollowed"] },
+      });
+      t.hasResourceProperties("AWS::SQS::Queue", { QueueName: "ig-local-notify", RedrivePolicy: Match.objectLike({ maxReceiveCount: 3 }) });
+      t.hasResourceProperties("AWS::SNS::Topic", { TopicName: "ig-local-notifications" });
+    });
+
+    it("adds like, comment and notification routes behind JWT", () => {
+      for (const RouteKey of ["POST /posts/{id}/like", "DELETE /posts/{id}/like", "GET /posts/{id}/comments",
+        "POST /posts/{id}/comments", "GET /notifications", "POST /notifications/read"]) {
+        t.hasResourceProperties("AWS::ApiGatewayV2::Route", { RouteKey, AuthorizationType: "JWT" });
+      }
+    });
+  });
+
   it("uses no VPC, RDS or custom resources", () => {
     const types = Object.values(t.toJSON().Resources as Record<string, { Type: string }>).map((r) => r.Type);
     expect(types.filter((x) => /^(AWS::EC2::|AWS::RDS::|Custom::|AWS::CloudFormation::CustomResource)/.test(x))).toEqual([]);

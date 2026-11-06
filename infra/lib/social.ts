@@ -10,7 +10,7 @@ import type { CoreStack } from "./core-stack.js";
 
 /**
  * Follow + feed (step 4):
- *   follow/unfollow (social Lambda) --UserFollowed--> EventBridge
+ *   follow/unfollow (social Lambda) → FOLLOWER# item → stream → UserFollowed → EventBridge
  *   pipeline Publish --PostPublished--> EventBridge
  *   EventBridge rule --> SQS fanout (+DLQ) --> fanout Lambda --> FEED#<follower> items
  *   GET /feed (feed Lambda) = pushed items + pulled celeb posts, signed cursor (Secrets Manager key)
@@ -26,8 +26,8 @@ export function addSocial(stack: CoreStack, opts: { bus: events.EventBus; media:
   });
 
   // ---------- follow / unfollow ----------
-  const social = stack.addFunction("social", "social/handler.ts", { env: { EVENT_BUS: opts.bus.eventBusName } });
-  opts.bus.grantPutEventsTo(social);
+  // UserFollowed is emitted by the table stream (step 5 CDC), so this Lambda needs no bus access.
+  const social = stack.addFunction("social", "social/handler.ts");
   stack.route("POST", "/users/{userId}/follow", social);
   stack.route("DELETE", "/users/{userId}/follow", social);
 
