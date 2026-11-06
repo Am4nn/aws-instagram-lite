@@ -47,4 +47,7 @@ Tick boxes as you go.
 - [ ] Code: `infra/lib/web.ts`, `scripts/src/web-plan.ts` (cache headers per file)
 - [ ] Try: `npm run deploy:web`, open the printed URL, log in as bob
 
+## Step 8: real AWS (next, together)
+- [ ] [08-real-aws-checklist.md](08-real-aws-checklist.md): account, MFA, **$5 budget first**, SSO login
+
 ## Every step has a "How big companies do it" table at the end. Read those for interview follow-ups.
