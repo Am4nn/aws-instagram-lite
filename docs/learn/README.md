@@ -30,4 +30,10 @@ Tick boxes as you go.
 - [ ] Code: `services/src/feed/fanout.ts` (push), `services/src/feed/handler.ts` + `merge.ts` (pull + merge)
 - [ ] Try: `npm run seed`, log in as bob, unfollow alice, watch her posts vanish
 
+## Step 5: Likes, comments, notifications (DynamoDB Streams, SNS)
+- [ ] [05-likes-comments-notifs.md](05-likes-comments-notifs.md): dual-write problem → CDC
+- [ ] [system-design-notes.md §8](system-design-notes.md#8-keeping-data-and-events-consistent-outbox--cdc--counters-at-scale): outbox / CDC + counters at scale
+- [ ] Code: `services/src/events/map.ts` (the whole CDC idea in 20 lines), `services/src/notify/worker.ts`
+- [ ] Try: like a post as bob, then log in as its author and open Activity
+
 ## Every step has a "How big companies do it" table at the end. Read those for interview follow-ups.

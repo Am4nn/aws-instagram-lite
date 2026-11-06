@@ -187,3 +187,29 @@ flowchart LR
 
 **Interview angle:** *"How do services talk?"* Sync (HTTP) when you need an answer now; async
 events when you just announce something happened. Mention at-least-once delivery + idempotency.
+
+---
+
+## 8. Keeping data and events consistent (outbox / CDC) + counters at scale
+
+**The question:** you save a like and must tell other services. How do you avoid "saved but never announced"?
+
+- **Dual write** (save, then publish) can half-fail. Don't.
+- **Transactional outbox:** in the *same DB transaction*, insert an `outbox` row; a relay reads the
+  outbox and publishes. **CDC** (change data capture: DynamoDB Streams, Debezium on Postgres/MySQL
+  binlogs) is the same idea using the database's own change log.
+- Consumers must be **idempotent** (at-least-once delivery) and tolerate **out-of-order** events.
+
+**Counters (likes, views):**
+- Small scale: atomic increment in a transaction with the like record (what we do).
+- Hot items: **sharded counters** (write to one of N shards at random, sum on read), or
+  **async aggregation** (count events in a stream, flush every few seconds). Display approximate
+  numbers ("10.2M") and cache them.
+
+```mermaid
+flowchart LR
+  W[Write: like row + counter] --> DB[(DB)]
+  DB -->|change log| R[Relay / stream reader] --> BUS((Event bus)) --> C1[Notifications] & C2[Feed] & C3[Analytics]
+```
+
+**In this project:** `services/src/events/` (stream → events), `services/src/engage/repo.ts` (exact counters).

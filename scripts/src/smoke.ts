@@ -3,6 +3,7 @@
  *  auth:     sign up → GET /me 404 → PUT /me → GET /users/{NAME} → no token 401
  *  pipeline: POST /posts → PUT PNG to S3 → READY → in grid, postCount 1; a fake PNG → FAILED
  *  feed:     seeds demo users; bob's feed = pushed + celeb-pulled posts, paged, unfollow/refollow
+ *  engage:   likes/comments counts, notifications via CDC (like, comment, follow; not self), mark read
  *  ui:       (needs `npm -w web run dev`) create account → username → upload via /new → grid shows it
  */
 import { randomUUID } from "node:crypto";
@@ -19,7 +20,7 @@ import { readOutputs } from "./deploy-local.js";
 import { localApiUrl } from "./urls.js";
 import { makePng } from "./png.js";
 import { seed } from "./seed.js";
-import { call, eventually, type Session } from "./client.js";
+import { call, eventually, signUpOrIn, ensureProfile, uploadPhoto, waitForStatus as waitPost, type Session } from "./client.js";
 
 const WEB = "http://localhost:3000";
 const CHROME = [
@@ -147,6 +148,21 @@ async function uiFlow() {
         .every((i) => i.complete && i.naturalWidth > 0), { timeout: 20000 });
       ok(true, "ui: bob's home feed renders posts");
       await page.screenshot({ path: img("04-feed.png") });
+
+      // Like + comment on the first post, then the activity page
+      await page.click(".feed-card a[href^='/p?id=']:not(.author):not(.muted)");
+      await page.waitForSelector(".post .actions button.like", { timeout: 20000 });
+      await page.waitForSelector(".comment-form input");
+      await page.click(".post .actions button.like");
+      await page.type(".comment-form input", "Nice one (from the smoke test)");
+      await page.click(".comment-form button[type='submit']");
+      await page.waitForFunction(() => document.querySelector(".comments")?.textContent?.includes("from the smoke test"), { timeout: 20000 });
+      ok(true, "ui: like + comment on a post page");
+      await page.screenshot({ path: img("05-post.png") });
+      await page.goto(`${WEB}/notifications`, { waitUntil: "networkidle0" });
+      await page.waitForSelector(".notifs li, main p.muted", { timeout: 20000 });
+      ok(true, "ui: activity page renders");
+      await page.screenshot({ path: img("05-activity.png") });
     } else console.log("⚠️  ui: no feed for bob (run npm run seed), skipped");
   } finally {
     await browser.close();
@@ -189,6 +205,39 @@ async function feedFlow(c: Ctx) {
   ok(star.body.isFollowing === true && star.body.followerCount >= 3, "feed: profile shows isFollowing + star is a celeb (≥3 followers)");
 }
 
+async function freshUser(c: Ctx, prefix: string) {
+  const login = `${prefix}${randomUUID().slice(0, 6)}`;
+  return ensureProfile(c, await signUpOrIn(c, login), login);
+}
+
+async function engageFlow(c: Ctx) {
+  const [author, fan, zed] = [await freshUser(c, "au"), await freshUser(c, "fan"), await freshUser(c, "zed")];
+  const postId = await uploadPhoto(c, author, makePng(800, 800, [90, 160, 200]), "like me");
+  ok((await waitPost(c, author, postId)).status === "READY", "engage: author's post is READY");
+
+  const like1 = await call(c, fan, "POST", `/posts/${postId}/like`);
+  const like2 = await call(c, fan, "POST", `/posts/${postId}/like`);
+  ok(like1.body.likeCount === 1 && like2.body.likeCount === 1, "engage: double like counts once");
+  ok((await call(c, fan, "GET", `/posts/${postId}`)).body.likedByMe === true, "engage: likedByMe true for the fan");
+  ok((await call(c, author, "GET", `/posts/${postId}`)).body.likedByMe === false, "engage: likedByMe false for the author");
+  const cm = await call(c, fan, "POST", `/posts/${postId}/comments`, { text: "great shot" });
+  ok(cm.status === 201 && cm.body.username === fan.login, "engage: comment saved with the commenter's username");
+  ok((await call(c, author, "GET", `/posts/${postId}`)).body.commentCount === 1, "engage: commentCount = 1");
+  await call(c, author, "POST", `/posts/${postId}/like`); // own like: must not notify
+  await call(c, zed, "POST", `/users/${author.userId}/follow`); // UserFollowed via the change stream
+
+  // CDC → EventBridge → SQS → notify Lambda is asynchronous
+  const notifs = await eventually(() => call(c, author, "GET", "/notifications"), (r) => r.body.items?.length >= 3, 45000);
+  const kinds = notifs.body.items.map((n: { type: string; actorUsername: string }) => `${n.type}:${n.actorUsername}`).sort();
+  ok(JSON.stringify(kinds) === JSON.stringify([`PostCommented:${fan.login}`, `PostLiked:${fan.login}`, `UserFollowed:${zed.login}`].sort()),
+    "engage: author notified of like + comment + follow (none for own like)");
+  ok(notifs.body.unread === 3, "engage: unread = 3");
+  await call(c, author, "POST", "/notifications/read");
+  ok((await call(c, author, "GET", "/notifications")).body.unread === 0, "engage: mark read → unread 0");
+  const zedFeed = await eventually(() => call(c, zed, "GET", "/feed"), (r) => r.body.items?.some((i: { postId: string }) => i.postId === postId), 30000);
+  ok(zedFeed.body.items.some((i: { postId: string }) => i.postId === postId), "engage: follow (via CDC) backfilled zed's feed");
+}
+
 async function main() {
   await assertFlociUp();
   useLocalEnv();
@@ -198,6 +247,7 @@ async function main() {
   if (!only || only === "auth") await authFlow(c);
   if (!only || only === "pipeline") await pipelineFlow(c);
   if (!only || only === "feed") await feedFlow(c);
+  if (!only || only === "engage") await engageFlow(c);
   if (!only || only === "ui") await uiFlow();
 }
 

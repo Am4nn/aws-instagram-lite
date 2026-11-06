@@ -3,7 +3,8 @@
 ## What got built
 
 - **Follow / unfollow** (`POST|DELETE /users/{id}/follow`): one transaction writes both directions
-  of the relationship and both counters. Emits a **`UserFollowed`** event.
+  of the relationship and both counters. A **`UserFollowed`** event follows (since step 5 it comes
+  from the database change stream, not from the API code; see `05-likes-comments-notifs.md`).
 - A **fan-out Lambda** listening to `PostPublished` + `UserFollowed` (via EventBridge → SQS):
   - normal author posts → a pointer goes into **every follower's feed** (push)
   - a **celeb** (≥ 3 followers locally) posts → nothing is pushed
