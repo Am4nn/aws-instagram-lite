@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Nav } from "../../components/Nav";
 import { api, ApiError, type Profile } from "../../lib/api";
+import { PostGrid } from "../../components/PostGrid";
 
 // Static export can't pre-render /u/<every username>, so the name is a query param: /u?name=ann
 function UserProfile() {
@@ -27,6 +28,7 @@ function UserProfile() {
         <span><b>{profile.followerCount}</b> followers</span>
         <span><b>{profile.followingCount}</b> following</span>
       </p>
+      <PostGrid userId={profile.userId} />
     </section>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Nav } from "../../components/Nav";
 import { api, ApiError, type Profile } from "../../lib/api";
+import { PostGrid } from "../../components/PostGrid";
 
 export default function Me() {
   const [profile, setProfile] = useState<Profile | null | undefined>(undefined); // undefined = loading, null = none yet
@@ -48,6 +49,7 @@ export default function Me() {
               <span><b>{profile.followerCount}</b> followers</span>
               <span><b>{profile.followingCount}</b> following</span>
             </p>
+            <PostGrid userId={profile.userId} />
           </section>
         )}
         {profile !== undefined && (

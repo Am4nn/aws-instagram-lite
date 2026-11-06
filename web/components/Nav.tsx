@@ -8,6 +8,7 @@ export function Nav() {
     <nav className="nav">
       <Link href="/me" className="brand">Instagram-lite</Link>
       <span className="spacer" />
+      <Link href="/new">New post</Link>
       <Link href="/me">Profile</Link>
       <button
         className="link"

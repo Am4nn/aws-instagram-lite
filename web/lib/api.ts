@@ -40,3 +40,16 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!res.ok) throw new ApiError(res.status, body.error ?? `HTTP ${res.status}`);
   return body as T;
 }
+
+export type Post = {
+  postId: string;
+  userId: string;
+  caption: string;
+  status: "PENDING" | "READY" | "FAILED";
+  createdAt: string;
+  likeCount: number;
+  commentCount: number;
+  failReason?: string;
+  thumbUrl?: string;
+  fullUrl?: string;
+};
