@@ -14,7 +14,7 @@ type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 export type PostsDeps = {
   repo: Pick<PostsRepo, "createPending" | "get" | "listByUser">;
   hasProfile: (userId: string) => Promise<boolean>;
-  presignPut: (key: string, contentType: string) => Promise<string>;
+  presignPut: (key: string, contentType: string, size: number) => Promise<string>;
   presignGet: (key: string) => Promise<string>;
 };
 
@@ -36,7 +36,7 @@ export function makeHandler(d: PostsDeps) {
         if (!(await d.hasProfile(me))) return json(404, { error: "choose a username first" });
         const post = await d.repo.createPending(me, input.value);
         const key = uploadKey(me, post.postId);
-        return json(201, { postId: post.postId, key, uploadUrl: await d.presignPut(key, input.value.contentType) });
+        return json(201, { postId: post.postId, key, uploadUrl: await d.presignPut(key, input.value.contentType, input.value.size) });
       }
       case "GET /posts/{id}": {
         const post = await d.repo.get(event.pathParameters?.id ?? "");
@@ -62,8 +62,10 @@ function realDeps(): PostsDeps {
   return {
     repo: makePostsRepo(docClient(), tableName()),
     hasProfile: async (id) => (await users.getProfile(id)) !== null,
-    presignPut: (key, contentType) =>
-      getSignedUrl(s3, new PutObjectCommand({ Bucket: process.env.UPLOADS_BUCKET, Key: key, ContentType: contentType }), { expiresIn: 300 }),
+    presignPut: (key, contentType, size) =>
+      getSignedUrl(s3, new PutObjectCommand({
+        Bucket: process.env.UPLOADS_BUCKET, Key: key, ContentType: contentType, ContentLength: size,
+      }), { expiresIn: 300, signableHeaders: new Set(["content-type", "content-length"]) }),
     presignGet: (key) =>
       getSignedUrl(s3, new GetObjectCommand({ Bucket: process.env.MEDIA_BUCKET, Key: key }), { expiresIn: 3600 }),
   };

@@ -17,7 +17,7 @@ function deps(over: Partial<PostsDeps> = {}): PostsDeps & { posts: Map<string, P
       async get(id) { return posts.get(id) ?? null; },
       async listByUser(userId) { return [...posts.values()].filter((p) => p.userId === userId && p.status === "READY"); },
     },
-    presignPut: async (key, type) => `https://s3/put/${key}?type=${type}`,
+    presignPut: async (key, type, size) => `https://s3/put/${key}?type=${type}&size=${size}`,
     presignGet: async (key) => `https://s3/get/${key}`,
     ...over,
   };
@@ -38,20 +38,20 @@ const call = async (h: ReturnType<typeof makeHandler>, e: APIGatewayProxyEventV2
 
 describe("posts handler", () => {
   it("POST /posts creates a PENDING post and returns a presigned PUT for the caller's own key", async () => {
-    const r = await call(makeHandler(deps()), ev("POST /posts", { body: { caption: "hi", contentType: "image/png" } }));
+    const r = await call(makeHandler(deps()), ev("POST /posts", { body: { caption: "hi", contentType: "image/png", size: 123 } }));
     expect(r.status).toBe(201);
-    expect(r.body).toEqual({ postId: "p1", key: "uploads/u1/p1", uploadUrl: "https://s3/put/uploads/u1/p1?type=image/png" });
+    expect(r.body).toEqual({ postId: "p1", key: "uploads/u1/p1", uploadUrl: "https://s3/put/uploads/u1/p1?type=image/png&size=123" });
   });
 
   it("POST /posts → 400 on bad input, 404 before the user has a profile", async () => {
     expect((await call(makeHandler(deps()), ev("POST /posts", { body: { contentType: "image/gif" } }))).status).toBe(400);
-    expect((await call(makeHandler(deps()), ev("POST /posts", { sub: "noprofile", body: { contentType: "image/png" } }))).status).toBe(404);
+    expect((await call(makeHandler(deps()), ev("POST /posts", { sub: "noprofile", body: { contentType: "image/png", size: 1 } }))).status).toBe(404);
   });
 
   it("GET /posts/{id} adds media URLs only when READY", async () => {
     const d = deps();
     const h = makeHandler(d);
-    await call(h, ev("POST /posts", { body: { contentType: "image/png" } }));
+    await call(h, ev("POST /posts", { body: { contentType: "image/png", size: 1 } }));
     const pending = await call(h, ev("GET /posts/{id}", { params: { id: "p1" } }));
     expect(pending.body).toMatchObject({ status: "PENDING" });
     expect(pending.body.thumbUrl).toBeUndefined();
@@ -63,7 +63,7 @@ describe("posts handler", () => {
   it("GET /posts/{id} → 404 for unknown posts and for other users' unfinished posts", async () => {
     const h = makeHandler(deps());
     expect((await call(h, ev("GET /posts/{id}", { params: { id: "nope" } }))).status).toBe(404);
-    await call(h, ev("POST /posts", { sub: "u1", body: { contentType: "image/png" } }));
+    await call(h, ev("POST /posts", { sub: "u1", body: { contentType: "image/png", size: 1 } }));
     expect((await call(h, ev("GET /posts/{id}", { sub: "u2", params: { id: "p1" } }))).status).toBe(404);
   });
 

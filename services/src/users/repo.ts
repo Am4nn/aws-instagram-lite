@@ -61,6 +61,20 @@ export function makeUsersRepo(doc: DynamoDBDocumentClient, table: string) {
    * written with attribute_not_exists in the same transaction as the profile.
    */
   async function upsertProfile(userId: string, input: ProfileInput): Promise<Profile> {
+    // A transaction can also be cancelled by a *conflicting* write (not a taken name). Those are
+    // transient, so retry a few times with backoff; UsernameTakenError is final.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await upsertOnce(userId, input);
+      } catch (e) {
+        const transient = (e as Error).name === "TransactionCanceledException";
+        if (!transient || attempt >= 2) throw e;
+        await new Promise((r) => setTimeout(r, 20 * 2 ** attempt + Math.random() * 20));
+      }
+    }
+  }
+
+  async function upsertOnce(userId: string, input: ProfileInput): Promise<Profile> {
     const current = await getProfile(userId);
     const now = new Date().toISOString();
 

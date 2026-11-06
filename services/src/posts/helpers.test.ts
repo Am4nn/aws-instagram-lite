@@ -22,21 +22,31 @@ describe("keys", () => {
 });
 
 describe("validateCreatePost", () => {
-  it("accepts a caption + allowed type", () => {
-    expect(validateCreatePost({ caption: " hi ", contentType: "image/png" }))
-      .toEqual({ ok: true, value: { caption: "hi", contentType: "image/png" } });
+  it("accepts a caption + allowed type + size", () => {
+    expect(validateCreatePost({ caption: " hi ", contentType: "image/png", size: 1000 }))
+      .toEqual({ ok: true, value: { caption: "hi", contentType: "image/png", size: 1000 } });
+  });
+
+  it("requires a size between 1 byte and 5 MB (it gets signed into the upload URL)", () => {
+    for (const size of [undefined, 0, -1, 1.5, "10", MAX_UPLOAD_BYTES + 1]) {
+      expect(validateCreatePost({ contentType: "image/png", size }).ok, String(size)).toBe(false);
+    }
   });
 
   it("rejects other content types and captions over 2200 chars", () => {
-    expect(validateCreatePost({ caption: "", contentType: "image/gif" }).ok).toBe(false);
-    expect(validateCreatePost({ caption: "x".repeat(2201), contentType: "image/png" }).ok).toBe(false);
+    expect(validateCreatePost({ caption: "", contentType: "image/gif", size: 10 }).ok).toBe(false);
+    expect(validateCreatePost({ caption: "x".repeat(2201), contentType: "image/png", size: 10 }).ok).toBe(false);
     expect(validateCreatePost(null).ok).toBe(false);
   });
 });
 
 describe("checkUpload", () => {
-  it("allows jpeg/png/webp up to 5 MB", () => {
-    expect(checkUpload({ contentType: "image/webp", size: MAX_UPLOAD_BYTES })).toEqual({ ok: true });
+  it("allows jpeg/png up to 5 MB", () => {
+    expect(checkUpload({ contentType: "image/jpeg", size: MAX_UPLOAD_BYTES })).toEqual({ ok: true });
+  });
+  it("rejects webp (jimp can't decode it, so it would always fail later)", () => {
+    expect(checkUpload({ contentType: "image/webp", size: 10 })).toMatchObject({ ok: false });
+    expect(validateCreatePost({ contentType: "image/webp", size: 10 }).ok).toBe(false);
   });
   it("rejects too big, empty and wrong type", () => {
     expect(checkUpload({ contentType: "image/png", size: MAX_UPLOAD_BYTES + 1 })).toMatchObject({ ok: false });

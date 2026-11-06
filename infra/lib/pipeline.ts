@@ -41,6 +41,8 @@ export function addPipeline(stack: CoreStack) {
       allowedMethods: ["PUT"], allowedOrigins: ["*"], allowedHeaders: ["*"], maxAge: 3000,
     }] },
     notificationConfiguration: { queueConfigurations: [{ event: "s3:ObjectCreated:*", queue: queue.queueArn }] },
+    // Originals are only needed until the pipeline has made the JPEGs; rejected/abandoned ones vanish too.
+    lifecycleConfiguration: { rules: [{ id: "expire-originals", status: "Enabled", prefix: "uploads/", expirationInDays: 1 }] },
   });
   uploads.applyRemovalPolicy(RemovalPolicy.DESTROY);
   uploads.node.addDependency(queue);
@@ -61,25 +63,34 @@ export function addPipeline(stack: CoreStack) {
   const validateFn = stack.addFunction("validate", "pipeline/validate.ts");
   validateFn.addToRolePolicy(s3Read);
   const resizeFn = stack.addFunction("resize", "pipeline/resize-step.ts", {
-    env: { MEDIA_BUCKET: media.bucketName }, tableAccess: false, memorySize: 1024, timeout: 30,
+    env: { MEDIA_BUCKET: media.bucketName }, tableAccess: false, memorySize: 1536, timeout: 30, // ~40 MP decodes in memory
   });
   resizeFn.addToRolePolicy(s3Read);
   media.grantPut(resizeFn);
   const saveFn = stack.addFunction("save", "pipeline/save.ts");
   const failFn = stack.addFunction("fail", "pipeline/fail.ts");
 
+  // One explicit retry policy per step (instead of CDK's default service-exception retrier):
+  //  - InvalidUploadError (bad image, wrong owner…) is final: never retried, goes straight to MarkFailed
+  //  - anything else (throttling, timeouts, a DynamoDB conflict) is transient: 3 retries, exponential
+  //    backoff with jitter, so a burst of failures doesn't retry in lock-step
+  const retryTransient = <T extends sfn.TaskStateBase>(t: T, final = true) => {
+    if (final) t.addRetry({ errors: ["InvalidUploadError"], maxAttempts: 0 });
+    return t.addRetry({
+      errors: [sfn.Errors.ALL], maxAttempts: 3, interval: Duration.seconds(1), backoffRate: 2,
+      jitterStrategy: sfn.JitterType.FULL,
+    });
+  };
   const invoke = (id: string, fn: typeof saveFn) =>
     new tasks.LambdaInvoke(stack, id, { lambdaFunction: fn, payloadResponseOnly: true, retryOnServiceExceptions: false });
 
-  const markFailed = invoke("MarkFailed", failFn).next(new sfn.Fail(stack, "Failed"));
+  const markFailed = retryTransient(invoke("MarkFailed", failFn), false).next(new sfn.Fail(stack, "Failed"));
   const catchAll = <T extends sfn.TaskStateBase>(t: T) => t.addCatch(markFailed, { resultPath: "$.error" });
 
-  const validate = catchAll(invoke("Validate", validateFn));
-  const resize = catchAll(invoke("Resize", resizeFn).addRetry({
-    errors: ["States.TaskFailed"], maxAttempts: 2, interval: Duration.seconds(2), backoffRate: 2,
-  }));
-  const save = catchAll(invoke("Save", saveFn));
-  const publish = new tasks.EventBridgePutEvents(stack, "Publish", {
+  const validate = catchAll(retryTransient(invoke("Validate", validateFn)));
+  const resize = catchAll(retryTransient(invoke("Resize", resizeFn)));
+  const save = catchAll(retryTransient(invoke("Save", saveFn)));
+  const publish = retryTransient(new tasks.EventBridgePutEvents(stack, "Publish", {
     entries: [{
       eventBus: bus,
       source: "ig.posts",
@@ -87,7 +98,11 @@ export function addPipeline(stack: CoreStack) {
       detail: sfn.TaskInput.fromObject({ "postId.$": "$.postId", "userId.$": "$.userId" }),
     }],
     resultPath: sfn.JsonPath.DISCARD,
-  });
+  }), false);
+  // The post is already READY here; if the event still can't be sent, fail loudly (alarm in step 6).
+  publish.addCatch(new sfn.Fail(stack, "PublishFailed", {
+    error: "PublishFailed", cause: "post is READY but PostPublished could not be sent",
+  }));
   const done = new sfn.Succeed(stack, "Done");
 
   const machine = new sfn.StateMachine(stack, "Pipeline", {

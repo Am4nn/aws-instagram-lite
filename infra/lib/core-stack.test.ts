@@ -84,6 +84,13 @@ describe("CoreStack", () => {
       t.hasResourceProperties("AWS::S3::Bucket", { BucketName: "ig-local-media-000000000000" });
     });
 
+    it("deletes originals after a day (rejected or abandoned uploads never pile up)", () => {
+      t.hasResourceProperties("AWS::S3::Bucket", {
+        BucketName: "ig-local-uploads-000000000000",
+        LifecycleConfiguration: { Rules: [Match.objectLike({ Status: "Enabled", ExpirationInDays: 1, Prefix: "uploads/" })] },
+      });
+    });
+
     it("uploads queue sends poison messages to a DLQ after 3 tries", () => {
       t.hasResourceProperties("AWS::SQS::Queue", {
         QueueName: "ig-local-uploads",
@@ -99,8 +106,25 @@ describe("CoreStack", () => {
       t.hasResourceProperties("AWS::Events::EventBus", { Name: "ig-local-bus" });
     });
 
+    it("retries transient errors with backoff but never retries a bad upload", () => {
+      const res = Object.values(t.findResources("AWS::StepFunctions::StateMachine"))[0] as any;
+      const parts = res.Properties.DefinitionString["Fn::Join"][1] as unknown[];
+      const def = JSON.parse(parts.map((p) => (typeof p === "string" ? p : "TOKEN")).join(""));
+      for (const name of ["Validate", "Resize", "Save", "MarkFailed", "Publish"]) {
+        const retry = def.States[name].Retry as { ErrorEquals: string[]; MaxAttempts: number; BackoffRate?: number }[];
+        expect(retry, name).toBeDefined();
+        const last = retry[retry.length - 1];
+        expect(last.ErrorEquals, name).toEqual(["States.ALL"]);
+        expect(last.MaxAttempts, name).toBeGreaterThanOrEqual(2);
+        if (name !== "MarkFailed" && name !== "Publish") {
+          expect(retry[0], name).toMatchObject({ ErrorEquals: ["InvalidUploadError"], MaxAttempts: 0 });
+        }
+      }
+      expect(def.States.Publish.Catch, "Publish failure is visible, not silent").toBeDefined();
+    });
+
     it("gives the resize Lambda room for images", () => {
-      t.hasResourceProperties("AWS::Lambda::Function", { FunctionName: "ig-local-resize", MemorySize: 1024, Timeout: 30 });
+      t.hasResourceProperties("AWS::Lambda::Function", { FunctionName: "ig-local-resize", MemorySize: 1536, Timeout: 30 });
     });
 
     it("adds the posts routes behind JWT", () => {

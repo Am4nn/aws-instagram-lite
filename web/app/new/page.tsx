@@ -5,7 +5,7 @@ import { Nav } from "../../components/Nav";
 import { api, ApiError, type Post } from "../../lib/api";
 
 type Phase = "idle" | "uploading" | "processing" | "failed";
-const TYPES = ["image/jpeg", "image/png", "image/webp"];
+const TYPES = ["image/jpeg", "image/png"];
 const MAX = 5 * 1024 * 1024;
 
 /** Create post → PUT the file straight to S3 → poll until the pipeline marks it READY. */
@@ -19,7 +19,7 @@ export default function NewPost() {
   function pick(f: File | undefined) {
     setError("");
     if (!f) return;
-    if (!TYPES.includes(f.type)) return setError("Pick a JPEG, PNG or WebP image.");
+    if (!TYPES.includes(f.type)) return setError("Pick a JPEG or PNG image.");
     if (f.size > MAX) return setError("Max 5 MB.");
     setFile(f);
     setPreview(URL.createObjectURL(f));
@@ -32,7 +32,7 @@ export default function NewPost() {
     try {
       setPhase("uploading");
       const { postId, uploadUrl } = await api<{ postId: string; uploadUrl: string }>("/posts", {
-        method: "POST", body: JSON.stringify({ caption, contentType: file.type }),
+        method: "POST", body: JSON.stringify({ caption, contentType: file.type, size: file.size }),
       });
       const put = await fetch(uploadUrl, { method: "PUT", body: file, headers: { "content-type": file.type } });
       if (!put.ok) throw new Error(`Upload failed (${put.status})`);

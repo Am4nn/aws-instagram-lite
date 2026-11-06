@@ -42,7 +42,7 @@ const isConditionFailure = (e: unknown) =>
 export type PostsRepo = ReturnType<typeof makePostsRepo>;
 
 export function makePostsRepo(doc: DynamoDBDocumentClient, table: string) {
-  async function createPending(userId: string, input: CreatePostInput): Promise<Post> {
+  async function createPending(userId: string, input: Pick<CreatePostInput, "caption" | "contentType">): Promise<Post> {
     const postId = randomUUID();
     const item = {
       ...postKey(postId), type: "post", postId, userId, caption: input.caption, contentType: input.contentType,
@@ -96,7 +96,9 @@ export function makePostsRepo(doc: DynamoDBDocumentClient, table: string) {
       ] }));
       return true;
     } catch (e) {
-      if (isConditionFailure(e)) return false;
+      // A cancelled transaction means EITHER our condition failed (already READY: fine) OR it
+      // collided with another write to the same profile (transient: must retry). Re-read to tell.
+      if (isConditionFailure(e) && (await get(postId))?.status !== "PENDING") return false;
       throw e;
     }
   }

@@ -13,7 +13,8 @@
     "test": "npm run test --workspaces --if-present",
     "deploy:local": "npm -w scripts run deploy-local",
     "spike": "npm -w scripts run spike",
-    "smoke": "npm -w scripts run smoke"
+    "smoke": "npm -w scripts run smoke",
+    "seed": "npm -w scripts run seed"
   },
   "devDependencies": {
     "@types/node": "^22",

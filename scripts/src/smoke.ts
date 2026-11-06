@@ -70,7 +70,7 @@ async function authFlow(c: Ctx) {
 }
 
 async function upload(c: Ctx, u: User, body: Buffer, caption: string) {
-  const r = await fetch(`${c.api}/posts`, { method: "POST", headers: u.headers, body: JSON.stringify({ caption, contentType: "image/png" }) });
+  const r = await fetch(`${c.api}/posts`, { method: "POST", headers: u.headers, body: JSON.stringify({ caption, contentType: "image/png", size: body.length }) });
   const { postId, uploadUrl } = await r.json();
   const put = await fetch(uploadUrl, { method: "PUT", body: new Uint8Array(body), headers: { "content-type": "image/png" } });
   if (!put.ok) throw new Error(`S3 PUT ${put.status}`);

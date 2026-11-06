@@ -43,8 +43,14 @@ describe("validate step", () => {
     likeCount: 0, commentCount: 0, ...o,
   });
   const input = { bucket: "up", key: "uploads/u1/p1", userId: "u1", postId: "p1" };
-  const v = (p: Post | null, head = { contentType: "image/png", size: 100 }) =>
-    makeValidate({ getPost: async () => p, head: async () => head });
+  const pngHeader = (w: number, h: number) => {
+    const b = Buffer.alloc(33);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0);
+    b.writeUInt32BE(13, 8); b.write("IHDR", 12); b.writeUInt32BE(w, 16); b.writeUInt32BE(h, 20);
+    return b;
+  };
+  const v = (p: Post | null, head = { contentType: "image/png", size: 100 }, header = pngHeader(100, 100)) =>
+    makeValidate({ getPost: async () => p, head: async () => head, readHeader: async () => header });
 
   it("passes a PENDING post owned by the key's user", async () => {
     expect(await v(post())(input)).toEqual({ ...input, contentType: "image/png", size: 100 });
@@ -56,6 +62,11 @@ describe("validate step", () => {
     await expect(v(post({ status: "READY" }))(input)).rejects.toThrow(/not PENDING/);
     await expect(v(post(), { contentType: "text/plain", size: 5 })(input)).rejects.toThrow(/unsupported/);
     await expect(v(post(), { contentType: "image/png", size: 6e6 })(input)).rejects.toThrow(/too big/);
+  });
+
+  it("rejects images over 40 megapixels (a tiny file can still decode to GBs of memory)", async () => {
+    await expect(v(post(), undefined, pngHeader(9000, 9000))(input)).rejects.toThrow(/megapixels/);
+    await expect(v(post(), undefined, pngHeader(6000, 4000))(input)).resolves.toBeTruthy();
   });
 });
 
