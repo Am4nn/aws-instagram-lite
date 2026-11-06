@@ -11,6 +11,7 @@ import { HttpJwtAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { cognitoIssuer, type StageConfig } from "./config.js";
 import { addPipeline } from "./pipeline.js";
+import { addSocial } from "./social.js";
 
 /** Path to a handler file in services/src */
 export const servicePath = (file: string) =>
@@ -97,6 +98,9 @@ export class CoreStack extends Stack {
     this.route("POST", "/posts", posts);
     this.route("GET", "/posts/{id}", posts);
     this.route("GET", "/users/{userId}/posts", posts);
+
+    // ---------- Follow + feed (step 4) ----------
+    addSocial(this, { bus: pipeline.bus, media: pipeline.media });
 
     new CfnOutput(this, "ApiUrl", { value: this.api.apiEndpoint });
     new CfnOutput(this, "TableName", { value: this.table.tableName });

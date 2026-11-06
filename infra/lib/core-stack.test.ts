@@ -110,6 +110,36 @@ describe("CoreStack", () => {
     });
   });
 
+  describe("follow + feed", () => {
+    it("keeps the cursor signing key in Secrets Manager", () => {
+      t.hasResourceProperties("AWS::SecretsManager::Secret", { Name: "ig-local-cursor-key" });
+    });
+
+    it("routes PostPublished + UserFollowed from the bus into the fanout queue (with DLQ)", () => {
+      t.hasResourceProperties("AWS::SQS::Queue", { QueueName: "ig-local-fanout", RedrivePolicy: Match.objectLike({ maxReceiveCount: 3 }) });
+      t.hasResourceProperties("AWS::Events::Rule", {
+        EventPattern: { "detail-type": ["PostPublished", "UserFollowed"] },
+        Targets: [Match.objectLike({ Arn: Match.anyValue() })],
+      });
+    });
+
+    it("configures feed + fanout with the celeb threshold", () => {
+      t.hasResourceProperties("AWS::Lambda::Function", {
+        FunctionName: "ig-local-feed",
+        Environment: { Variables: Match.objectLike({ CELEB_THRESHOLD: "3", CURSOR_SECRET_ARN: Match.anyValue() }) },
+      });
+      t.hasResourceProperties("AWS::Lambda::Function", {
+        FunctionName: "ig-local-fanout", Environment: { Variables: Match.objectLike({ CELEB_THRESHOLD: "3" }) },
+      });
+    });
+
+    it("adds follow + feed routes behind JWT", () => {
+      for (const RouteKey of ["POST /users/{userId}/follow", "DELETE /users/{userId}/follow", "GET /feed"]) {
+        t.hasResourceProperties("AWS::ApiGatewayV2::Route", { RouteKey, AuthorizationType: "JWT" });
+      }
+    });
+  });
+
   it("uses no VPC, RDS or custom resources", () => {
     const types = Object.values(t.toJSON().Resources as Record<string, { Type: string }>).map((r) => r.Type);
     expect(types.filter((x) => /^(AWS::EC2::|AWS::RDS::|Custom::|AWS::CloudFormation::CustomResource)/.test(x))).toEqual([]);
