@@ -2,6 +2,7 @@
  * End-to-end checks against Floci (npm run smoke). Each section prints ✅ lines.
  *  auth:     sign up → GET /me 404 → PUT /me → GET /users/{NAME} → no token 401
  *  pipeline: POST /posts → PUT PNG to S3 → READY → in grid, postCount 1; a fake PNG → FAILED
+ *  feed:     seeds demo users; bob's feed = pushed + celeb-pulled posts, paged, unfollow/refollow
  *  ui:       (needs `npm -w web run dev`) create account → username → upload via /new → grid shows it
  */
 import { randomUUID } from "node:crypto";
@@ -17,6 +18,8 @@ import { assertFlociUp, useLocalEnv } from "./env.js";
 import { readOutputs } from "./deploy-local.js";
 import { localApiUrl } from "./urls.js";
 import { makePng } from "./png.js";
+import { seed } from "./seed.js";
+import { call, eventually, type Session } from "./client.js";
 
 const WEB = "http://localhost:3000";
 const CHROME = [
@@ -131,9 +134,59 @@ async function uiFlow() {
     }, { timeout: 20000 });
     ok(true, "ui: upload via /new → back on /me with the photo in the grid");
     await page.screenshot({ path: img("03-grid.png") });
+
+    // Seeded user's home feed (run `npm run seed` first; skipped if bob doesn't exist)
+    await page.evaluate(() => localStorage.clear());
+    await page.goto(`${WEB}/login`, { waitUntil: "networkidle0" });
+    await page.type('input[autocomplete="username"]', "bob");
+    await page.type('input[type="password"]', "password1");
+    await page.click('button[type="submit"]');
+    const landed = await page.waitForSelector(".feed-card img", { timeout: 20000 }).then(() => true, () => false);
+    if (landed) {
+      await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>(".feed-card img")].slice(0, 2)
+        .every((i) => i.complete && i.naturalWidth > 0), { timeout: 20000 });
+      ok(true, "ui: bob's home feed renders posts");
+      await page.screenshot({ path: img("04-feed.png") });
+    } else console.log("⚠️  ui: no feed for bob (run npm run seed), skipped");
   } finally {
     await browser.close();
   }
+}
+
+type FeedPage = { items: { postId: string; author: { username: string } }[]; next?: string };
+
+async function readWholeFeed(c: Ctx, s: Session) {
+  const pages: FeedPage[] = [];
+  let cursor: string | undefined;
+  do {
+    const r = await call<FeedPage>(c, s, "GET", `/feed${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+    if (r.status !== 200) throw new Error(`GET /feed ${r.status}`);
+    pages.push(r.body);
+    cursor = r.body.next;
+  } while (cursor && pages.length < 10);
+  return pages;
+}
+const authorsOf = (pages: FeedPage[]) => new Set(pages.flatMap((p) => p.items.map((i) => i.author.username)));
+
+async function feedFlow(c: Ctx) {
+  const s = await seed(c); // idempotent
+  const bob = s.bob;
+  // Fan-out is asynchronous (EventBridge → SQS → Lambda), so wait until it has caught up.
+  const pages = await eventually(() => readWholeFeed(c, bob), (p) => p.flatMap((x) => x.items).length >= 11, 45000);
+  const authors = authorsOf(pages);
+  ok(["alice", "carol", "dave", "bob"].every((a) => authors.has(a)), "feed: pushed posts from people bob follows (+ his own)");
+  ok(authors.has("star"), "feed: celeb (star) posts pulled at read time");
+  ok(!authors.has("eve"), "feed: nothing from eve (not followed)");
+  const ids = pages.flatMap((p) => p.items.map((i) => i.postId));
+  ok(pages.length >= 2 && new Set(ids).size === ids.length, `feed: ${pages.length} pages via cursor, no duplicates`);
+  const forged = (pages[0].next ?? "x.y").replace(/.$/, (ch) => (ch === "A" ? "B" : "A"));
+  ok((await call(c, bob, "GET", `/feed?cursor=${encodeURIComponent(forged)}`)).status === 400, "feed: tampered cursor → 400");
+  await call(c, bob, "DELETE", `/users/${s.alice.userId}/follow`);
+  ok(!authorsOf(await readWholeFeed(c, bob)).has("alice"), "feed: unfollow alice → her posts disappear at once");
+  await call(c, bob, "POST", `/users/${s.alice.userId}/follow`);
+  ok(authorsOf(await readWholeFeed(c, bob)).has("alice"), "feed: follow again → her posts are back");
+  const star = await call(c, bob, "GET", "/users/star");
+  ok(star.body.isFollowing === true && star.body.followerCount >= 3, "feed: profile shows isFollowing + star is a celeb (≥3 followers)");
 }
 
 async function main() {
@@ -144,6 +197,7 @@ async function main() {
   const only = process.argv[2];
   if (!only || only === "auth") await authFlow(c);
   if (!only || only === "pipeline") await pipelineFlow(c);
+  if (!only || only === "feed") await feedFlow(c);
   if (!only || only === "ui") await uiFlow();
 }
 

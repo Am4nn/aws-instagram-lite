@@ -83,3 +83,13 @@ aws stepfunctions get-execution-history --execution-arn <arn> --query "events[].
 aws s3 ls s3://ig-local-media-000000000000/media/ --recursive
 aws sqs get-queue-attributes --queue-url <UploadsDlqUrl> --attribute-names ApproximateNumberOfMessages
 ```
+
+## How big companies do it
+
+| Here | At scale |
+|---|---|
+| jimp in Lambda | **sharp/libvips** (native, ~10× faster) or a dedicated image service; many sizes + formats (WebP/AVIF) |
+| Presigned PUT with signed size | Same, or presigned POST policies; **multipart** for big files/videos |
+| Signed GET URLs for images | **CDN** (CloudFront) with immutable keys; on-the-fly resizing at the edge (step 7 adds CloudFront) |
+| Validate type/size/pixels | Plus **content moderation** (Rekognition / ML), EXIF stripping (privacy), virus scanning |
+| Step Functions | Step Functions, or queues + workers at very high volume (cheaper per item) |

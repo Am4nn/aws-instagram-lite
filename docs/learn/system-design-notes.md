@@ -42,6 +42,8 @@ celebrity problem, land on hybrid. Mention: feed stores only IDs (not full posts
 cursor pagination, feed can be trimmed (keep last ~500 items).
 
 **In this project:** threshold = 3 locally so you can see both paths with test users.
+Built in step 4: push in `services/src/feed/fanout.ts`, pull + merge in `services/src/feed/handler.ts`
+and `merge.ts`. Log in as **bob** (seed data): alice/carol/dave are pushed, star (celeb) is pulled.
 
 ---
 
@@ -159,3 +161,29 @@ flowchart LR
 
 **In this project:** S3 → SQS (+DLQ) → starter → Step Functions; idempotent via execution name =
 postId and `status = PENDING` condition (`services/src/posts/repo.ts` → `markReady`).
+
+---
+
+## 7. Pagination and event-driven design
+
+**Pagination:** offset (`?page=3`) is simple but slow on big tables (the DB still walks the skipped rows) and
+shifts when new items arrive. **Cursor/keyset** (`?cursor=<last seen key>`) is O(page), stable
+under inserts, and is what every large feed API uses. Make cursors opaque (encode + sign) so
+clients can't depend on, or tamper with, your internal keys.
+
+**Event-driven (choreography):** services publish facts ("PostPublished", "UserFollowed") to a
+bus; anyone interested subscribes. Producers don't know consumers, so you add features (notifications,
+analytics, search indexing) without touching the producer. The cost: flows are harder to follow end
+to end, so you need tracing, DLQs and idempotent consumers.
+
+```mermaid
+flowchart LR
+  A[Posts service] -->|PostPublished| BUS((Event bus))
+  S[Social service] -->|UserFollowed| BUS
+  BUS --> F[Feed fan-out]
+  BUS --> N[Notifications · step 5]
+  BUS --> X[Search / analytics · later]
+```
+
+**Interview angle:** *"How do services talk?"* Sync (HTTP) when you need an answer now; async
+events when you just announce something happened. Mention at-least-once delivery + idempotency.

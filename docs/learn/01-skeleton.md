@@ -75,3 +75,12 @@ aws lambda list-functions --query "Functions[].FunctionName"
 aws cloudformation list-stacks
 docker logs floci --tail 50
 ```
+
+## How big companies do it
+
+| Here | At scale |
+|---|---|
+| One stack, two stages | Many stacks per service, an **AWS account per environment** (dev / staging / prod) via AWS Organizations |
+| `cdk deploy` from a laptop | **CI/CD pipelines** (GitHub Actions, CodePipeline): PR → tests → deploy to staging → approval → prod |
+| Emulator for local testing | Emulator for the fast loop **plus** ephemeral cloud environments per PR for realistic tests |
+| Lambda + HTTP API | Same for many teams; very high, steady traffic often moves to containers (ECS/EKS) where it's cheaper |

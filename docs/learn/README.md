@@ -23,5 +23,11 @@ Tick boxes as you go.
 - [ ] Code: `infra/lib/pipeline.ts` (the whole pipeline in one file), `services/src/pipeline/*`
 - [ ] Try: upload a photo, then look at the Step Functions execution history (commands in the doc)
 
-## Big system design topics (come back after step 4)
-- [ ] [system-design-notes.md §1](system-design-notes.md#1-news-feed-how-do-you-build-the-home-feed): news feed fan-out
+## Step 4: Follow + feed (EventBridge, hybrid fan-out, Secrets Manager)
+- [ ] [system-design-notes.md §1](system-design-notes.md#1-news-feed-how-do-you-build-the-home-feed): **news feed fan-out** (read this first)
+- [ ] [04-follow-feed.md](04-follow-feed.md): what got built and how big companies scale it
+- [ ] [system-design-notes.md §7](system-design-notes.md#7-pagination-and-event-driven-design): cursor pagination + event-driven design
+- [ ] Code: `services/src/feed/fanout.ts` (push), `services/src/feed/handler.ts` + `merge.ts` (pull + merge)
+- [ ] Try: `npm run seed`, log in as bob, unfollow alice, watch her posts vanish
+
+## Every step has a "How big companies do it" table at the end. Read those for interview follow-ups.

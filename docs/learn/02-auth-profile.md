@@ -89,3 +89,13 @@ Look at the raw items:
 aws dynamodb scan --table-name ig-local-main --max-items 10
 aws cognito-idp list-users --user-pool-id <UserPoolId from infra/cdk.out/outputs-local.json>
 ```
+
+## How big companies do it
+
+| Here | At scale |
+|---|---|
+| Auto-confirm sign-up | Email/phone verification, bot protection (CAPTCHA, rate limits), MFA |
+| Tokens in `localStorage` | **httpOnly secure cookies** via a backend-for-frontend (BFF), so scripts can't read tokens |
+| Cognito | Cognito, Auth0/Okta, or an in-house identity service; social login (Google/Apple) |
+| One users table | User data split by access pattern; usernames often in a separate uniqueness service or a relational DB |
+| Retry on transaction conflicts | Same idea, plus idempotency keys on every write API |
