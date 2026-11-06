@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { localApiUrl, webEnvFile } from "./urls.js";
+import { awsWebBuildEnv, localApiUrl, webEnvFile } from "./urls.js";
 
 describe("localApiUrl", () => {
   it("maps the amazonaws.com HTTP API endpoint to Floci's local hostname", () => {
@@ -23,5 +23,25 @@ describe("webEnvFile", () => {
       "NEXT_PUBLIC_USER_POOL_CLIENT_ID=client123\n" +
       "NEXT_PUBLIC_COGNITO_ENDPOINT=http://localhost:4566\n",
     );
+  });
+});
+
+describe("awsWebBuildEnv", () => {
+  const out = { ApiUrl: "https://abc.execute-api.ap-south-1.amazonaws.com/", UserPoolClientId: "client123" };
+
+  it("points the web build at the real API + Cognito in the region, with email sign-up", () => {
+    expect(awsWebBuildEnv(out, "ap-south-1")).toEqual({
+      NEXT_PUBLIC_API_URL: "https://abc.execute-api.ap-south-1.amazonaws.com",
+      NEXT_PUBLIC_USER_POOL_CLIENT_ID: "client123",
+      NEXT_PUBLIC_AWS_REGION: "ap-south-1",
+      NEXT_PUBLIC_COGNITO_ENDPOINT: "", // must be set (empty) so web/.env.local's Floci URL is not used
+      NEXT_PUBLIC_SIGNUP_EMAIL: "required",
+    });
+  });
+
+  it("refuses outputs from a failed or partial deploy", () => {
+    expect(() => awsWebBuildEnv({ ApiUrl: out.ApiUrl }, "ap-south-1")).toThrow(/UserPoolClientId/);
+    expect(() => awsWebBuildEnv({ ...out, ApiUrl: "http://x.execute-api.localhost.floci.io:4566" }, "ap-south-1"))
+      .toThrow(/not a real AWS API URL/);
   });
 });

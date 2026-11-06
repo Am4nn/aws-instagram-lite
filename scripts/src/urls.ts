@@ -14,3 +14,23 @@ export function webEnvFile(v: { apiUrl: string; userPoolClientId: string; cognit
     "",
   ].join("\n");
 }
+
+/**
+ * NEXT_PUBLIC_* for building the web app against real AWS. Passed as process env to `next build`
+ * (process env beats web/.env.local, which keeps the local values untouched).
+ */
+export function awsWebBuildEnv(out: Record<string, string>, region: string): Record<string, string> {
+  for (const k of ["ApiUrl", "UserPoolClientId"]) {
+    if (!out[k]) throw new Error(`stack output ${k} missing: did the deploy finish?`);
+  }
+  if (!/^https:\/\/[a-z0-9]+\.execute-api\.[a-z0-9-]+\.amazonaws\.com/.test(out.ApiUrl)) {
+    throw new Error(`${out.ApiUrl} is not a real AWS API URL`);
+  }
+  return {
+    NEXT_PUBLIC_API_URL: out.ApiUrl.replace(/\/$/, ""),
+    NEXT_PUBLIC_USER_POOL_CLIENT_ID: out.UserPoolClientId,
+    NEXT_PUBLIC_AWS_REGION: region,
+    NEXT_PUBLIC_COGNITO_ENDPOINT: "", // empty = Cognito's regional endpoint
+    NEXT_PUBLIC_SIGNUP_EMAIL: "required", // pool needs an email + code confirmation
+  };
+}

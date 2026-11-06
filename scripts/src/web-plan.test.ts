@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { webUploadPlan } from "./web-plan.js";
+import { staleKeys, webUploadPlan } from "./web-plan.js";
 
 describe("webUploadPlan (what to upload for a static Next.js export)", () => {
   const plan = webUploadPlan(["index.html", "login.html", "u.html", "404.html", "_next/static/chunks/a1b2.js",
@@ -29,5 +29,13 @@ describe("webUploadPlan (what to upload for a static Next.js export)", () => {
     expect(byKey.get("feed.txt")?.cacheControl).toBe("no-cache");
     expect(byKey.get("feed/__next.feed/__PAGE__.txt")?.cacheControl).toBe("no-cache");
     expect(byKey.get("favicon.ico")?.cacheControl).toBe("no-cache");
+  });
+});
+
+describe("staleKeys (files from older builds)", () => {
+  it("lists bucket keys the new build no longer has, so old pages and chunks are deleted", () => {
+    const plan = webUploadPlan(["index.html", "login.html", "_next/static/new.js"]);
+    expect(staleKeys(["index.html", "login", "login.html", "_next/static/old.js", "gone.html", "gone"], plan))
+      .toEqual(["_next/static/old.js", "gone.html", "gone"]);
   });
 });
