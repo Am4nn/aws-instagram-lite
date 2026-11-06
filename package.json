@@ -1,8 +1,15 @@
 {
   "name": "instagram-lite",
   "private": true,
-  "workspaces": ["infra", "services", "web", "scripts"],
+  "workspaces": [
+    "infra",
+    "services",
+    "web",
+    "scripts"
+  ],
   "scripts": {
+    "floci:up": "docker compose up -d --wait",
+    "floci:down": "docker compose down",
     "test": "npm run test --workspaces --if-present",
     "deploy:local": "npm -w scripts run deploy-local",
     "spike": "npm -w scripts run spike"

@@ -20,8 +20,8 @@ export function cdk(args: string[]): void {
   if (res.status !== 0) throw new Error(`cdk ${args[0]} failed (exit ${res.status})`);
 }
 
-export function readOutputs(stack: string): Record<string, string> {
-  const all = JSON.parse(readFileSync(`${infraDir}cdk.out/outputs-local.json`, "utf8"));
+export function readOutputs(stack: string, file = "outputs-local.json"): Record<string, string> {
+  const all = JSON.parse(readFileSync(`${infraDir}cdk.out/${file}`, "utf8"));
   return all[stack] ?? {};
 }
 

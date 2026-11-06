@@ -7,6 +7,8 @@ export interface StageConfig {
   /** Followers at or above this count make an author a "celeb" (fan-out on read). */
   celebThreshold: number;
   isLocal: boolean;
+  /** JWT issuer = `${cognitoIssuerBase}/${userPoolId}`. Floci issues tokens from its own URL. */
+  cognitoIssuerBase: string;
 }
 
 function isFlociEndpoint(url: string | undefined): boolean {
@@ -27,13 +29,17 @@ export function loadConfig(stage: string | undefined, env: NodeJS.ProcessEnv): S
         "stage=local but AWS_ENDPOINT_URL must point at Floci (e.g. http://localhost:4566). Refusing to touch real AWS.",
       );
     }
-    return { stage, prefix: "ig-local", celebThreshold: 3, isLocal: true };
+    return { stage, prefix: "ig-local", celebThreshold: 3, isLocal: true, cognitoIssuerBase: "http://127.0.0.1:4566" };
   }
   if (stage === "aws") {
     if (env.AWS_ENDPOINT_URL) {
       throw new Error("stage=aws: unset AWS_ENDPOINT_URL first (it is pointing at an emulator).");
     }
-    return { stage, prefix: "ig-aws", celebThreshold: 10000, isLocal: false };
+    const region = env.CDK_DEFAULT_REGION ?? env.AWS_REGION ?? "us-east-1";
+    return {
+      stage, prefix: "ig-aws", celebThreshold: 10000, isLocal: false,
+      cognitoIssuerBase: `https://cognito-idp.${region}.amazonaws.com`,
+    };
   }
   throw new Error(`stage must be local or aws (got "${stage}"). Pass -c stage=local`);
 }

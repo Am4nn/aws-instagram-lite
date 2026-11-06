@@ -7,6 +7,7 @@ describe("loadConfig", () => {
   it("builds the local stage when pointed at Floci", () => {
     expect(loadConfig("local", FLOCI)).toEqual({
       stage: "local", prefix: "ig-local", celebThreshold: 3, isLocal: true,
+      cognitoIssuerBase: "http://127.0.0.1:4566",
     });
   });
 
@@ -17,6 +18,7 @@ describe("loadConfig", () => {
   it("builds the aws stage with no endpoint override", () => {
     expect(loadConfig("aws", {})).toEqual({
       stage: "aws", prefix: "ig-aws", celebThreshold: 10000, isLocal: false,
+      cognitoIssuerBase: "https://cognito-idp.us-east-1.amazonaws.com",
     });
   });
 

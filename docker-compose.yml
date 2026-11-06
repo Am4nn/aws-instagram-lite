@@ -1,0 +1,19 @@
+# Local AWS (Floci). Same as `floci start`, plus the flags this project needs.
+# Container is named "floci" so `floci status/logs/reset` keep working.
+services:
+  floci:
+    image: floci/floci:2.4.0
+    container_name: floci
+    ports:
+      - "4566:4566"
+    environment:
+      # Let API Gateway JWT authorizers trust the local Cognito issuer.
+      FLOCI_SECURITY_ALLOW_PRIVATE_JWT_TARGETS: "true"
+      # The flag only trusts *literal* loopback IPs, so Cognito must issue
+      # tokens as http://127.0.0.1:4566/<pool> (not http://localhost:...).
+      FLOCI_BASE_URL: "http://127.0.0.1:4566"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock # Lambda runs in sibling containers
+      - floci-data:/app/data
+volumes:
+  floci-data:
