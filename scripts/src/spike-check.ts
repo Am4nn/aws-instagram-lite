@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { S3Client, ListObjectsV2Command, DeleteObjectsCommand } from "@aws-sdk/client-s3";
 import { fileURLToPath } from "node:url";
-import { assertFlociUp, flociEnv, FLOCI_ENDPOINT } from "./env.js";
+import { assertFlociUp, useLocalEnv, FLOCI_ENDPOINT } from "./env.js";
 import { cleanStaleStacks } from "./stale.js";
 import { cdk, readOutputs } from "./deploy-local.js";
 import { renderReport, type CheckResult } from "./report.js";
@@ -48,7 +48,7 @@ const reportPath = fileURLToPath(new URL("../../docs/learn/floci-compat.md", imp
 
 async function main() {
   await assertFlociUp();
-  Object.assign(process.env, flociEnv());
+  useLocalEnv();
   await cleanStaleStacks();
   cdk(["bootstrap", "aws://000000000000/us-east-1", ...ctx]);
   // Pre-clean: a spike stack left from a failed run would make deploy say "no changes".

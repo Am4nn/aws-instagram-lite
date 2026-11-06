@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { assertFlociUp, flociEnv } from "./env.js";
+import { assertFlociUp, localEnv, useLocalEnv } from "./env.js";
 import { localApiUrl, webEnvFile } from "./urls.js";
 import { cleanStaleStacks } from "./stale.js";
 
@@ -15,7 +15,7 @@ export function cdk(args: string[]): void {
   const cdkBin = createRequire(`${infraDir}package.json`).resolve("aws-cdk/bin/cdk");
   const res = spawnSync(process.execPath, [cdkBin, ...args], {
     cwd: infraDir,
-    env: { ...process.env, ...flociEnv() },
+    env: localEnv(process.env),
     stdio: "inherit",
   });
   if (res.status !== 0) throw new Error(`cdk ${args[0]} failed (exit ${res.status})`);
@@ -28,7 +28,7 @@ export function readOutputs(stack: string, file = "outputs-local.json"): Record<
 
 async function main() {
   await assertFlociUp();
-  Object.assign(process.env, flociEnv());
+  useLocalEnv();
   const stale = await cleanStaleStacks();
   if (stale.length) console.log(`Floci was reset; removed stale stack records: ${stale.join(", ")}`);
   cdk(["bootstrap", "aws://000000000000/us-east-1", "-c", "stage=local"]);

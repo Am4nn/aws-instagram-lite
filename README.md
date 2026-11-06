@@ -5,7 +5,7 @@ Runs fully on your laptop via [Floci](https://floci.io), then on a real AWS acco
 
 ## Run locally
 
-1. Start Docker Desktop, then `floci start`
+1. Start Docker Desktop, then `npm run floci:up` (not `floci start`: this repo needs extra Floci flags, see docker-compose.yml)
 2. `npm install`
 3. `npm run deploy:local`: deploys the stack to Floci
 4. `npm -w web run dev`: open http://localhost:3000
