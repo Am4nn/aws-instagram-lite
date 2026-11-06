@@ -117,6 +117,7 @@ export class CoreStack extends Stack {
     addOps(this, {
       dlqs: { uploads: pipeline.dlq, fanout: social.fanoutDlq, notify: engage.notifyDlq, cdc: engage.cdcDlq },
       pipeline: pipeline.machine,
+      api: this.api,
     });
 
     new CfnOutput(this, "ApiUrl", { value: this.api.apiEndpoint });

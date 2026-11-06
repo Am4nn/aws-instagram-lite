@@ -5,13 +5,14 @@ import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cwActions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as sfn from "aws-cdk-lib/aws-stepfunctions";
+import type * as apigwv2 from "aws-cdk-lib/aws-apigatewayv2";
 import type { CoreStack } from "./core-stack.js";
 
 /**
  * Ops (step 6): alert on *symptoms users would feel*: messages giving up (DLQ not empty) and
  * photos failing to process. Alarms → ops SNS topic → (on AWS) email/Slack/PagerDuty.
  */
-export function addOps(stack: CoreStack, opts: { dlqs: Record<string, sqs.Queue>; pipeline: sfn.StateMachine }) {
+export function addOps(stack: CoreStack, opts: { dlqs: Record<string, sqs.Queue>; pipeline: sfn.StateMachine; api: apigwv2.HttpApi }) {
   const { prefix, isLocal } = stack.stageConfig;
   const topic = new sns.Topic(stack, "OpsTopic", { topicName: `${prefix}-ops` });
   const action = new cwActions.SnsAction(topic);
@@ -19,7 +20,7 @@ export function addOps(stack: CoreStack, opts: { dlqs: Record<string, sqs.Queue>
   for (const [name, dlq] of Object.entries(opts.dlqs)) {
     const alarm = new cloudwatch.Alarm(stack, `${name}DlqAlarm`, {
       alarmName: `${prefix}-${name}-dlq-not-empty`,
-      alarmDescription: `Messages failed 3 times and landed in ${dlq.queueName}. Runbook: docs/learn/06-ops.md`,
+      alarmDescription: `Messages gave up after their retries and landed in ${dlq.queueName}. Runbook: docs/learn/06-ops.md`,
       metric: dlq.metricApproximateNumberOfMessagesVisible({ period: Duration.minutes(1), statistic: "Maximum" }),
       threshold: 0,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
@@ -32,7 +33,7 @@ export function addOps(stack: CoreStack, opts: { dlqs: Record<string, sqs.Queue>
 
   const failed = new cloudwatch.Alarm(stack, "PipelineFailedAlarm", {
     alarmName: `${prefix}-pipeline-failed`,
-    alarmDescription: "A photo pipeline run failed (bad uploads end in MarkFailed and still count). Check recent executions.",
+    alarmDescription: "A photo pipeline run failed for a system reason (rejected uploads end in Succeed and don't count). Check recent executions.",
     metric: opts.pipeline.metricFailed({ period: Duration.minutes(5), statistic: "Sum" }),
     threshold: 0,
     comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
@@ -40,6 +41,20 @@ export function addOps(stack: CoreStack, opts: { dlqs: Record<string, sqs.Queue>
     treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
   });
   failed.addAlarmAction(action);
+  failed.addOkAction(action);
+
+  // Users seeing errors: 5 or more server errors (5xx) from the API within 5 minutes.
+  const api5xx = new cloudwatch.Alarm(stack, "Api5xxAlarm", {
+    alarmName: `${prefix}-api-5xx`,
+    alarmDescription: "The API returned 5+ server errors in 5 minutes. Check the Lambda logs for the failing route.",
+    metric: opts.api.metricServerError({ period: Duration.minutes(5), statistic: "Sum" }),
+    threshold: 5,
+    comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  });
+  api5xx.addAlarmAction(action);
+  api5xx.addOkAction(action);
 
   // Locally there's no email/Slack: alarms land in a queue the ops script reads.
   if (isLocal) {

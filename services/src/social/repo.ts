@@ -1,8 +1,9 @@
 import {
-  BatchGetCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, TransactWriteCommand,
+  DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, TransactWriteCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { profileKey } from "../users/repo.js";
 import { conditionalWrite } from "../lib/tx.js";
+import { batchGetAll } from "../lib/batch.js";
 
 // A follow is two items (one per direction) so both "who do I follow" and
 // "who follows me" are single-partition queries.
@@ -115,17 +116,8 @@ export function makeFollowsRepo(doc: DynamoDBDocumentClient, table: string) {
 
   /** Which of these users do I follow? One BatchGet of my follow edges (no full following list). */
   async function followingAmong(me: string, userIds: string[]): Promise<Set<string>> {
-    const out = new Set<string>();
-    const ids = [...new Set(userIds)];
-    for (let i = 0; i < ids.length; i += 100) {
-      let keys: Record<string, unknown>[] | undefined = ids.slice(i, i + 100).map((id) => followsKey(me, id));
-      for (let attempt = 0; keys?.length && attempt < 5; attempt++) {
-        const r = await doc.send(new BatchGetCommand({ RequestItems: { [table]: { Keys: keys } } }));
-        for (const item of r.Responses?.[table] ?? []) out.add(item.userId as string);
-        keys = r.UnprocessedKeys?.[table]?.Keys as Record<string, unknown>[] | undefined;
-      }
-    }
-    return out;
+    const items = await batchGetAll(doc, table, [...new Set(userIds)].map((id) => followsKey(me, id)));
+    return new Set(items.map((i) => i.userId as string));
   }
 
   return { follow, unfollow, isFollowing, listFollowing, listFollowers, registerCelebIfNeeded, isCeleb, listCelebs, followingAmong };

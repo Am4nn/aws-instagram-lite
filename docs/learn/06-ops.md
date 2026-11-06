@@ -4,7 +4,8 @@
 
 - **Structured JSON logs** (AWS Lambda Powertools) in every background worker, with
   correlation keys (`postId`, `messageId`, `authorId`). One photo can be followed through the pipeline.
-- **Alarms** on every dead-letter queue (uploads, fanout, notify, CDC) and on failed pipeline runs,
+- **Alarms** on every dead-letter queue (uploads, fanout, notify, CDC), on failed pipeline runs, and on API
+  5xx errors (5+ in 5 minutes),
   all notifying an **ops SNS topic** (on AWS: email / Slack / PagerDuty; locally: an inbox queue).
 - **Log retention**: every function has its own log group kept 14 days (no "logs forever" bill).
 - **Ops CLI**: `npm run ops -- status | chaos | redrive <queue> | purge <queue> | inbox | logs <fn>`.
@@ -48,7 +49,12 @@ A DLQ keeps failed messages instead of losing them. The workflow: alarm → look
 and the logs → fix the bug → **redrive** (move messages back) → they succeed. AWS has a
 "Start DLQ redrive" button. Our `ops redrive` does the same by hand, so you can see the mechanics.
 
-### 4. Change-stream failures
+### 4. User errors are not incidents
+A user uploading a text file renamed `.png` is **rejected** (post marked FAILED, the user sees why), and the
+workflow ends in a **Succeed** state called `Rejected`. Only system faults end in `Fail` and trigger
+the pipeline alarm. Otherwise on-call gets paged for every bad upload and starts ignoring alarms (alert fatigue).
+
+### 5. Change-stream failures
 The CDC stream (step 5) now has its own **on-failure DLQ**. After 10 failed tries, or once a
 record is an hour old, the record's position goes there and the alarm fires, instead of being silently dropped.
 

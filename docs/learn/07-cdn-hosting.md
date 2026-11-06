@@ -32,10 +32,10 @@ load on the origin, DDoS absorption, and HTTPS at the edge.
 | File | Cache-Control | Why |
 |---|---|---|
 | `_next/static/*.js/.css` | `max-age=31536000, immutable` | the file name contains a content hash; a new build = a new name |
-| `*.html` | `no-cache` | always revalidate, so a deploy shows up immediately |
+| everything else (`*.html`, Next's per-page `.txt` data, favicon) | `no-cache` | no hash in the name, so always revalidate; a deploy shows up immediately |
 | photos (`media/…`) | `max-age=31536000, immutable` | set in step 3: a post's image never changes |
 
-That's why **cache invalidation** is only needed for HTML (we invalidate `/*` to keep it simple; the
+That's why **cache invalidation** is only needed for the unhashed files (we invalidate `/*` to keep it simple; the
 first 1,000 paths per month are free).
 
 ### 3. Origin Access Control (OAC)

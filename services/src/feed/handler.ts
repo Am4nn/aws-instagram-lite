@@ -1,5 +1,6 @@
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from "aws-lambda";
-import { BatchGetCommand, QueryCommand, type DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { QueryCommand, type DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { batchGetAll } from "../lib/batch.js";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -55,18 +56,8 @@ export function makeHandler(d: FeedDeps) {
 
 // ---------- real dependencies ----------
 
-async function batchGet(doc: DynamoDBDocumentClient, table: string, keys: Record<string, string>[]) {
-  const out: Record<string, unknown>[] = [];
-  for (let i = 0; i < keys.length; i += 100) {
-    let req: Record<string, unknown>[] | undefined = keys.slice(i, i + 100);
-    for (let attempt = 0; req?.length && attempt < 5; attempt++) {
-      const r = await doc.send(new BatchGetCommand({ RequestItems: { [table]: { Keys: req } } }));
-      out.push(...(r.Responses?.[table] ?? []));
-      req = r.UnprocessedKeys?.[table]?.Keys as Record<string, unknown>[] | undefined;
-    }
-  }
-  return out;
-}
+const batchGet = (doc: DynamoDBDocumentClient, table: string, keys: Record<string, string>[]) =>
+  batchGetAll(doc, table, keys);
 
 function realDeps(): FeedDeps {
   const doc = docClient();

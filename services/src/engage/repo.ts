@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
-  BatchGetCommand, DynamoDBDocumentClient, GetCommand, QueryCommand, TransactWriteCommand,
+  DynamoDBDocumentClient, GetCommand, QueryCommand, TransactWriteCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { postKey, type Post } from "../posts/repo.js";
 import { conditionalWrite } from "../lib/tx.js";
+import { batchGetAll } from "../lib/batch.js";
 
 export type Comment = { commentId: string; postId: string; userId: string; username: string; text: string; createdAt: string };
 
@@ -53,26 +54,27 @@ export function makeEngageRepo(doc: DynamoDBDocumentClient, table: string) {
 
   /** Which of these posts has this user liked? One BatchGet for a whole feed page. */
   async function likedBy(postIds: string[], userId: string): Promise<Set<string>> {
-    const out = new Set<string>();
-    for (let i = 0; i < postIds.length; i += 100) {
-      const keys = postIds.slice(i, i + 100).map((id) => likeKey(id, userId));
-      if (!keys.length) continue;
-      const r = await doc.send(new BatchGetCommand({ RequestItems: { [table]: { Keys: keys, ProjectionExpression: "postId" } } }));
-      for (const item of r.Responses?.[table] ?? []) out.add(item.postId as string);
-    }
-    return out;
+    const items = await batchGetAll(doc, table, postIds.map((id) => likeKey(id, userId)), "postId");
+    return new Set(items.map((i) => i.postId as string));
   }
 
   async function addComment(post: Post, user: { userId: string; username: string }, text: string): Promise<Comment> {
     const createdAt = new Date().toISOString();
     const commentId = randomUUID();
     const c: Comment = { commentId, postId: post.postId, userId: user.userId, username: user.username, text, createdAt };
-    await doc.send(new TransactWriteCommand({ TransactItems: [
-      // username is copied in (denormalised) so listing comments needs no extra lookups
-      { Put: { TableName: table, Item: { pk: `POST#${post.postId}`, sk: `COMMENT#${createdAt}#${commentId}`,
-        type: "comment", postAuthorId: post.userId, ...c } } },
-      bump(post.postId, "commentCount", 1),
-    ] }));
+    const key = { pk: `POST#${post.postId}`, sk: `COMMENT#${createdAt}#${commentId}` };
+    await conditionalWrite(
+      () => doc.send(new TransactWriteCommand({
+        // Idempotency token: if the SDK retries after a lost response, DynamoDB won't apply the ADD twice.
+        ClientRequestToken: commentId,
+        TransactItems: [
+          // username is copied in (denormalised) so listing comments needs no extra lookups
+          { Put: { TableName: table, Item: { ...key, type: "comment", postAuthorId: post.userId, ...c } } },
+          bump(post.postId, "commentCount", 1),
+        ],
+      })),
+      async () => Boolean((await doc.send(new GetCommand({ TableName: table, Key: key, ConsistentRead: true }))).Item),
+    );
     return c;
   }
 

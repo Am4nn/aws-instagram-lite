@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { webUploadPlan } from "./web-plan.js";
 
 describe("webUploadPlan (what to upload for a static Next.js export)", () => {
-  const plan = webUploadPlan(["index.html", "login.html", "u.html", "404.html", "_next/static/chunks/a1b2.js", "_next/static/css/x.css", "favicon.ico"]);
+  const plan = webUploadPlan(["index.html", "login.html", "u.html", "404.html", "_next/static/chunks/a1b2.js",
+    "_next/static/css/x.css", "favicon.ico", "feed.txt", "feed\\__next.feed\\__PAGE__.txt"]);
   const byKey = new Map(plan.map((p) => [p.key, p]));
 
   it("uploads every file under its own path with the right content type", () => {
@@ -22,5 +23,11 @@ describe("webUploadPlan (what to upload for a static Next.js export)", () => {
     expect(byKey.get("_next/static/chunks/a1b2.js")?.cacheControl).toBe("public, max-age=31536000, immutable");
     expect(byKey.get("login")?.cacheControl).toBe("no-cache");
     expect(byKey.get("index.html")?.cacheControl).toBe("no-cache");
+  });
+
+  it("revalidates every unhashed file (Next's per-page .txt data changes each build), incl. Windows paths", () => {
+    expect(byKey.get("feed.txt")?.cacheControl).toBe("no-cache");
+    expect(byKey.get("feed/__next.feed/__PAGE__.txt")?.cacheControl).toBe("no-cache");
+    expect(byKey.get("favicon.ico")?.cacheControl).toBe("no-cache");
   });
 });

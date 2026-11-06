@@ -81,10 +81,19 @@ export function addPipeline(stack: CoreStack) {
       jitterStrategy: sfn.JitterType.FULL,
     });
   };
-  const invoke = (id: string, fn: typeof saveFn) =>
-    new tasks.LambdaInvoke(stack, id, { lambdaFunction: fn, payloadResponseOnly: true, retryOnServiceExceptions: false });
+  const invoke = (id: string, fn: typeof saveFn, resultPath?: string) =>
+    new tasks.LambdaInvoke(stack, id, {
+      lambdaFunction: fn, payloadResponseOnly: true, retryOnServiceExceptions: false,
+      ...(resultPath ? { resultPath } : {}),
+    });
 
-  const markFailed = retryTransient(invoke("MarkFailed", failFn), false).next(new sfn.Fail(stack, "Failed"));
+  // After marking the post FAILED: a bad upload is the user's problem (Succeed "Rejected", no alarm);
+  // anything else is ours (Fail → counts as a failed execution → ig-<stage>-pipeline-failed alarm).
+  const markFailed = retryTransient(invoke("MarkFailed", failFn, "$.markFailed"), false).next(
+    new sfn.Choice(stack, "UserError?")
+      .when(sfn.Condition.stringEquals("$.error.Error", "InvalidUploadError"), new sfn.Succeed(stack, "Rejected"))
+      .otherwise(new sfn.Fail(stack, "Failed")),
+  );
   const catchAll = <T extends sfn.TaskStateBase>(t: T) => t.addCatch(markFailed, { resultPath: "$.error" });
 
   const validate = catchAll(retryTransient(invoke("Validate", validateFn)));

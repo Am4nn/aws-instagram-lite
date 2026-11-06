@@ -16,7 +16,7 @@ const TYPES: Record<string, string> = {
 /**
  * Static-site upload plan:
  *  - `_next/static/*` file names contain a content hash → cache forever (`immutable`)
- *  - HTML must always revalidate (`no-cache`) so a deploy is visible immediately
+ *  - everything else (HTML, Next page-data .txt, favicon) has no hash → `no-cache` (revalidate each time)
  *  - each page also gets an extensionless key (`login.html` → `login`) so `/login` works on plain
  *    S3+CloudFront (the usual alternative is a CloudFront Function rewriting the URL)
  */
@@ -26,7 +26,7 @@ export function webUploadPlan(files: string[]): Upload[] {
     const ext = file.split(".").pop()!.toLowerCase();
     const contentType = TYPES[ext] ?? "application/octet-stream";
     const cacheControl = file.startsWith("_next/static/") ? "public, max-age=31536000, immutable"
-      : ext === "html" ? "no-cache" : "public, max-age=3600";
+      : "no-cache"; // unhashed names (HTML, Next .txt page data, favicon) must revalidate after each deploy
     out.push({ key: file, file, contentType, cacheControl });
     if (ext === "html" && file !== "index.html" && file !== "404.html") {
       out.push({ key: file.slice(0, -".html".length), file, contentType, cacheControl });

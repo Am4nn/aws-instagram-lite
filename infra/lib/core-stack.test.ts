@@ -123,6 +123,18 @@ describe("CoreStack", () => {
       expect(def.States.Publish.Catch, "Publish failure is visible, not silent").toBeDefined();
     });
 
+    it("a rejected upload (user error) ends in Succeed, so the pipeline-failed alarm only means system faults", () => {
+      const res = Object.values(t.findResources("AWS::StepFunctions::StateMachine"))[0] as any;
+      const parts = res.Properties.DefinitionString["Fn::Join"][1] as unknown[];
+      const def = JSON.parse(parts.map((p) => (typeof p === "string" ? p : "TOKEN")).join(""));
+      expect(def.States.Rejected.Type).toBe("Succeed");
+      expect(def.States.Failed.Type).toBe("Fail");
+      expect(def.States.MarkFailed.ResultPath).toBe("$.markFailed"); // keep $.error for the choice
+      const choice = def.States[def.States.MarkFailed.Next];
+      expect(choice.Type).toBe("Choice");
+      expect(JSON.stringify(choice)).toContain("InvalidUploadError");
+    });
+
     it("gives the resize Lambda room for images", () => {
       t.hasResourceProperties("AWS::Lambda::Function", { FunctionName: "ig-local-resize", MemorySize: 1536, Timeout: 30 });
     });
@@ -209,6 +221,7 @@ describe("CoreStack", () => {
         });
       }
       t.hasResourceProperties("AWS::CloudWatch::Alarm", { AlarmName: "ig-local-pipeline-failed", MetricName: "ExecutionsFailed" });
+      t.hasResourceProperties("AWS::CloudWatch::Alarm", { AlarmName: "ig-local-api-5xx", MetricName: "5xx", Threshold: 5 });
     });
 
     it("has a local-only inbox queue subscribed to the ops topic", () => {
