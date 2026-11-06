@@ -12,6 +12,16 @@ function synth() {
   return Template.fromStack(stack);
 }
 
+function synthAws(context: { alertEmail?: string } = {}) {
+  const app = new App({ context: { "aws:cdk:bundling-stacks": [] } });
+  const config = loadConfig("aws", {}, context);
+  const stack = new CoreStack(app, "ig-aws-core", { config, env: { account: "123456789012", region: config.region } });
+  return Template.fromStack(stack);
+}
+
+/** `https://<CloudFront domain>`: the only browser origin allowed on aws. */
+const cdnOrigin = { "Fn::Join": ["", ["https://", { "Fn::GetAtt": [Match.stringLikeRegexp("^Cdn"), "DomainName"] }]] };
+
 describe("CoreStack", () => {
   const t = synth();
 
@@ -47,6 +57,14 @@ describe("CoreStack", () => {
   it("routes GET /health on an HTTP API", () => {
     t.hasResourceProperties("AWS::ApiGatewayV2::Route", { RouteKey: "GET /health" });
     t.resourceCountIs("AWS::ApiGatewayV2::Api", 1);
+  });
+
+  it("allows any browser origin locally (dev server, CloudFront on Floci)", () => {
+    t.hasResourceProperties("AWS::ApiGatewayV2::Api", { CorsConfiguration: Match.objectLike({ AllowOrigins: ["*"] }) });
+    t.hasResourceProperties("AWS::S3::Bucket", {
+      BucketName: "ig-local-uploads-000000000000",
+      CorsConfiguration: { CorsRules: [Match.objectLike({ AllowedOrigins: ["*"] })] },
+    });
   });
 
   it("has a Cognito user pool that auto-confirms via a PreSignUp trigger", () => {
@@ -252,6 +270,71 @@ describe("CoreStack", () => {
         }),
       });
     });
+  });
+
+  it("uses no VPC, RDS or custom resources", () => {
+    const types = Object.values(t.toJSON().Resources as Record<string, { Type: string }>).map((r) => r.Type);
+    expect(types.filter((x) => /^(AWS::EC2::|AWS::RDS::|Custom::|AWS::CloudFormation::CustomResource)/.test(x))).toEqual([]);
+  });
+});
+
+describe("CoreStack on aws (stage=aws, ap-south-1)", () => {
+  const t = synthAws();
+
+  it("requires a verified email at sign-up: no auto-confirm trigger", () => {
+    t.hasResourceProperties("AWS::Cognito::UserPool", {
+      UserPoolName: "ig-aws-users",
+      AutoVerifiedAttributes: ["email"],
+      Schema: Match.arrayWith([Match.objectLike({ Name: "email", Required: true })]),
+      LambdaConfig: Match.absent(),
+    });
+    expect(Object.values(t.findResources("AWS::Lambda::Function", { Properties: { FunctionName: "ig-aws-presignup" } }))).toEqual([]);
+  });
+
+  it("trusts tokens from Cognito in ap-south-1", () => {
+    t.hasResourceProperties("AWS::ApiGatewayV2::Authorizer", {
+      JwtConfiguration: {
+        Issuer: Match.objectLike({ "Fn::Join": ["", Match.arrayWith(["https://cognito-idp.ap-south-1.amazonaws.com/"])] }),
+      },
+    });
+  });
+
+  it("allows only the CloudFront origin on the API and on browser uploads", () => {
+    t.hasResourceProperties("AWS::ApiGatewayV2::Api", { CorsConfiguration: Match.objectLike({ AllowOrigins: [cdnOrigin] }) });
+    t.hasResourceProperties("AWS::S3::Bucket", {
+      BucketName: "ig-aws-uploads-123456789012",
+      CorsConfiguration: { CorsRules: [Match.objectLike({ AllowedMethods: ["PUT"], AllowedOrigins: [cdnOrigin] })] },
+    });
+  });
+
+  it("CloudFront: real 404s (OAC may list the bucket), security headers, edges incl. India", () => {
+    t.hasResourceProperties("AWS::CloudFront::Distribution", {
+      DistributionConfig: Match.objectLike({
+        CustomErrorResponses: [Match.objectLike({ ErrorCode: 404, ResponseCode: 404, ResponsePagePath: "/404.html" })],
+        DefaultCacheBehavior: Match.objectLike({ ResponseHeadersPolicyId: Match.anyValue() }),
+        PriceClass: "PriceClass_200",
+      }),
+    });
+    const policy = JSON.stringify(t.findResources("AWS::S3::BucketPolicy"));
+    expect(policy).toContain("s3:ListBucket");
+  });
+
+  it("deletes data with the stack (learning project: cdk destroy leaves nothing billable)", () => {
+    for (const type of ["AWS::DynamoDB::Table", "AWS::S3::Bucket", "AWS::SecretsManager::Secret", "AWS::Cognito::UserPool"]) {
+      for (const [id, r] of Object.entries(t.findResources(type))) expect((r as any).DeletionPolicy, `${type} ${id}`).toBe("Delete");
+    }
+  });
+
+  it("has no ops inbox queue and no email subscription unless alertEmail is set", () => {
+    expect(Object.keys(t.findResources("AWS::SNS::Subscription", { Properties: { Protocol: "email" } }))).toEqual([]);
+    expect(Object.keys(t.findResources("AWS::SQS::Queue", { Properties: { QueueName: "ig-aws-ops-inbox" } }))).toEqual([]);
+    synthAws({ alertEmail: "me@example.com" }).hasResourceProperties("AWS::SNS::Subscription", {
+      Protocol: "email", Endpoint: "me@example.com", TopicArn: { Ref: Match.stringLikeRegexp("^OpsTopic") },
+    });
+  });
+
+  it("contains no emulator URLs", () => {
+    expect(JSON.stringify(t.toJSON())).not.toMatch(/localhost|127\.0\.0\.1|:4566|floci/i);
   });
 
   it("uses no VPC, RDS or custom resources", () => {

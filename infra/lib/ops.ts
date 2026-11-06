@@ -62,6 +62,10 @@ export function addOps(stack: CoreStack, opts: { dlqs: Record<string, sqs.Queue>
     topic.addSubscription(new subs.SqsSubscription(inbox, { rawMessageDelivery: true }));
     new CfnOutput(stack, "OpsInboxUrl", { value: inbox.queueUrl });
   }
+  // On AWS: optional email (-c alertEmail=... or IG_ALERT_EMAIL). AWS mails a link you must click once.
+  if (!isLocal && stack.stageConfig.alertEmail) {
+    topic.addSubscription(new subs.EmailSubscription(stack.stageConfig.alertEmail));
+  }
   new CfnOutput(stack, "OpsTopicArn", { value: topic.topicArn });
   return { topic };
 }

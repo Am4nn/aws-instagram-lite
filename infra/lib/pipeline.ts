@@ -38,7 +38,8 @@ export function addPipeline(stack: CoreStack) {
       blockPublicAcls: true, blockPublicPolicy: true, ignorePublicAcls: true, restrictPublicBuckets: true,
     },
     corsConfiguration: { corsRules: [{
-      allowedMethods: ["PUT"], allowedOrigins: ["*"], allowedHeaders: ["*"], maxAge: 3000,
+      // Browser presigned PUTs: from the CloudFront site only on aws, any origin locally.
+      allowedMethods: ["PUT"], allowedOrigins: [stack.webOrigin ?? "*"], allowedHeaders: ["*"], maxAge: 3000,
     }] },
     notificationConfiguration: { queueConfigurations: [{ event: "s3:ObjectCreated:*", queue: queue.queueArn }] },
     // Originals are only needed until the pipeline has made the JPEGs; rejected/abandoned ones vanish too.
