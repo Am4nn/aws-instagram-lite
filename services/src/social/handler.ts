@@ -10,6 +10,8 @@ type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 type Deps = {
   follows: Pick<FollowsRepo, "follow" | "unfollow">;
   userExists: (userId: string) => Promise<boolean>;
+  /** After every follow: register the followee as a celeb if they crossed the threshold. */
+  registerCeleb: (userId: string) => Promise<void>;
 };
 
 export function makeHandler(d: Deps) {
@@ -23,6 +25,7 @@ export function makeHandler(d: Deps) {
         // No publish here: the new FOLLOWER# item reaches EventBridge as UserFollowed via the
         // DynamoDB stream (events/publisher.ts), so the DB write and the event can't diverge.
         await d.follows.follow(me, other);
+        await d.registerCeleb(other);
         return json(200, { following: true });
       }
       case "DELETE /users/{userId}/follow":
@@ -37,8 +40,11 @@ export function makeHandler(d: Deps) {
 let real: ReturnType<typeof makeHandler> | undefined;
 function realDeps(): Deps {
   const users = makeUsersRepo(docClient(), tableName());
+  const follows = makeFollowsRepo(docClient(), tableName());
+  const threshold = Number(process.env.CELEB_THRESHOLD ?? 10000);
   return {
-    follows: makeFollowsRepo(docClient(), tableName()),
+    follows,
+    registerCeleb: async (id) => { await follows.registerCelebIfNeeded(id, threshold); },
     userExists: async (id) => (await users.getProfile(id)) !== null,
   };
 }

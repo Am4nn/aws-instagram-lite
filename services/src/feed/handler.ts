@@ -11,18 +11,22 @@ import { postKey } from "../posts/repo.js";
 import { makeFollowsRepo } from "../social/repo.js";
 import { makeEngageRepo } from "../engage/repo.js";
 import { signCursor, verifyCursor } from "./cursor.js";
-import { mergeFeed, type Ref } from "./merge.js";
+import { pageFeed } from "./page.js";
+import type { Ref } from "./merge-types.js";
 
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 
+type Page = { refs: Ref[]; truncated: boolean };
+
 export type FeedDeps = {
-  threshold: number;
   pageSize?: number;
   cursorKey: () => Promise<string>;
-  listFollowing: (me: string) => Promise<string[]>;
-  followerCounts: (userIds: string[]) => Promise<Map<string, number>>;
-  feedPage: (me: string, before: string | undefined, limit: number) => Promise<Ref[]>;
-  celebPosts: (userId: string, before: string | undefined, limit: number) => Promise<Ref[]>;
+  /** Celebs (from the cached registry) that I follow: their posts are pulled at read time. */
+  celebsIFollow: (me: string) => Promise<string[]>;
+  /** Which of these authors I still follow (read-time unfollow filter, only for authors on the page). */
+  followingAmong: (me: string, authorIds: string[]) => Promise<Set<string>>;
+  feedPage: (me: string, before: string | undefined, limit: number) => Promise<Page>;
+  celebPosts: (userId: string, before: string | undefined, limit: number) => Promise<Page>;
   hydrate: (refs: Ref[], viewerId: string) => Promise<unknown[]>;
 };
 
@@ -35,15 +39,13 @@ export function makeHandler(d: FeedDeps) {
     const before = token ? verifyCursor(token, key) : undefined;
     if (before === null) return json(400, { error: "invalid cursor" });
 
-    const following = await d.listFollowing(me);
-    const counts = await d.followerCounts(following);
-    const celebs = following.filter((id) => (counts.get(id) ?? 0) >= d.threshold);
-    // Over-fetch: unfollowed authors get filtered out after reading.
-    const [feedItems, ...celebLists] = await Promise.all([
-      d.feedPage(me, before, pageSize * 3),
-      ...celebs.map((id) => d.celebPosts(id, before, pageSize)),
-    ]);
-    const page = mergeFeed({ feedItems, celebPosts: celebLists.flat(), following: new Set(following), me, limit: pageSize });
+    const celebs = await d.celebsIFollow(me);
+    const page = await pageFeed({
+      me, limit: pageSize, before,
+      feed: (b, n) => d.feedPage(me, b, n),
+      celebs: celebs.map((id) => (b: string | undefined, n: number) => d.celebPosts(id, b, n)),
+      isFollowing: (ids) => d.followingAmong(me, ids),
+    });
     return json(200, {
       items: await d.hydrate(page.items, me),
       ...(page.next ? { next: signCursor(page.next, key) } : {}),
@@ -76,16 +78,22 @@ function realDeps(): FeedDeps {
   const presign = (Key: string) =>
     getSignedUrl(s3, new GetObjectCommand({ Bucket: process.env.MEDIA_BUCKET, Key }), { expiresIn: 3600 });
 
+  // The celeb registry is tiny and read by every feed request: cache it per container for 60 s.
+  let celebCache: { at: number; ids: Promise<string[]> } | undefined;
+  const allCelebs = () => {
+    if (!celebCache || Date.now() - celebCache.at > 60_000) {
+      const ids = follows.listCelebs().catch((e) => { celebCache = undefined; throw e; });
+      celebCache = { at: Date.now(), ids };
+    }
+    return celebCache.ids;
+  };
+
   return {
-    threshold: Number(process.env.CELEB_THRESHOLD ?? 10000),
     cursorKey: () => (secret ??= sm.send(new GetSecretValueCommand({ SecretId: process.env.CURSOR_SECRET_ARN }))
       .then((r) => r.SecretString!)
       .catch((e) => { secret = undefined; throw e; })), // don't cache a failure for the container's lifetime
-    listFollowing: (me) => follows.listFollowing(me),
-    followerCounts: async (ids) => {
-      const items = await batchGet(doc, table, ids.map(profileKey));
-      return new Map(items.map((p) => [p.userId as string, (p.followerCount as number) ?? 0]));
-    },
+    celebsIFollow: async (me) => [...(await follows.followingAmong(me, await allCelebs()))],
+    followingAmong: (me, ids) => follows.followingAmong(me, ids),
     feedPage: async (me, before, limit) => {
       const r = await doc.send(new QueryCommand({
         TableName: table,
@@ -93,18 +101,22 @@ function realDeps(): FeedDeps {
         ExpressionAttributeValues: { ":pk": `FEED#${me}`, ...(before ? { ":b": before } : {}) },
         ScanIndexForward: false, Limit: limit,
       }));
-      return (r.Items ?? []).map((i) => ({ postId: i.postId, authorId: i.authorId, sortKey: i.sk }));
+      const refs = (r.Items ?? []).map((i) => ({ postId: i.postId, authorId: i.authorId, sortKey: i.sk }));
+      return { refs, truncated: Boolean(r.LastEvaluatedKey) || refs.length === limit };
     },
     celebPosts: async (userId, before, limit) => {
       const r = await doc.send(new QueryCommand({
         TableName: table, IndexName: "gsi1",
         KeyConditionExpression: "gsi1pk = :pk AND gsi1sk BETWEEN :lo AND :hi",
         ExpressionAttributeValues: { ":pk": `USER#${userId}`, ":lo": "POST#", ":hi": before ? `POST#${before}` : "POST#~" },
-        ScanIndexForward: false, Limit: limit,
+        ScanIndexForward: false, Limit: limit + 1, // +1: BETWEEN is inclusive, the cursor post itself may come back
       }));
-      return (r.Items ?? [])
-        .map((i) => ({ postId: i.postId, authorId: i.userId, sortKey: `${i.createdAt}#${i.postId}` }))
-        .filter((ref) => !before || ref.sortKey < before);
+      const raw = r.Items ?? [];
+      const refs = raw
+        .map((i) => ({ postId: i.postId as string, authorId: i.userId as string, sortKey: `${i.createdAt}#${i.postId}` }))
+        .filter((ref) => !before || ref.sortKey < before)
+        .slice(0, limit);
+      return { refs, truncated: raw.length === limit + 1 || Boolean(r.LastEvaluatedKey) };
     },
     hydrate: async (refs, viewerId) => {
       const liked = await makeEngageRepo(doc, table).likedBy(refs.map((r) => r.postId), viewerId);

@@ -13,8 +13,7 @@ function setup(followerCounts: Record<string, number>, followersOf: Record<strin
     s1: { postId: "s1", userId: "star", createdAt: "2026-01-02T00:00:00Z" },
   };
   const fanout = makeFanout({
-    threshold: 3,
-    getFollowerCount: async (id) => followerCounts[id] ?? null,
+    isCeleb: async (id) => (followerCounts[id] ?? 0) >= 3,
     getPost: async (id) => posts[id] ?? null,
     async *followers(id) { const all = followersOf[id] ?? []; for (let i = 0; i < all.length; i += 2) yield all.slice(i, i + 2); },
     recentPosts: async (id) => Object.values(posts).filter((p) => p.userId === id),

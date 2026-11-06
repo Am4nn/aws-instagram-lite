@@ -155,6 +155,9 @@ describe("CoreStack", () => {
       t.hasResourceProperties("AWS::Lambda::Function", {
         FunctionName: "ig-local-fanout", Timeout: 60, Environment: { Variables: Match.objectLike({ CELEB_THRESHOLD: "3" }) },
       });
+      t.hasResourceProperties("AWS::Lambda::Function", {
+        FunctionName: "ig-local-social", Environment: { Variables: Match.objectLike({ CELEB_THRESHOLD: "3" }) },
+      });
       // one post per invocation: a big fan-out can't time out (and DLQ) its neighbours in the batch
       t.hasResourceProperties("AWS::Lambda::EventSourceMapping", { BatchSize: 1, FunctionName: Match.objectLike({ Ref: Match.stringLikeRegexp("Fnfanout") }) });
     });

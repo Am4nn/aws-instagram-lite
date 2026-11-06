@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from "aws-lambda";
 import { makeHandler, type FeedDeps } from "./handler.js";
 import { signCursor } from "./cursor.js";
-import type { Ref } from "./merge.js";
+import type { Ref } from "./merge-types.js";
 
 const KEY = "secret-key";
 const ref = (postId: string, authorId: string, day: number): Ref =>
@@ -15,12 +15,11 @@ function deps(): FeedDeps & { calls: string[] } {
   const before = (rs: Ref[], b?: string) => rs.filter((r) => !b || r.sortKey < b);
   return {
     calls,
-    threshold: 3,
     cursorKey: async () => KEY,
-    listFollowing: async () => ["alice", "star"],
-    followerCounts: async (ids) => new Map(ids.map((id) => [id, id === "star" ? 5 : 1])),
-    feedPage: async (_me, b, n) => { calls.push(`feed<${b ?? ""}`); return before(feed, b).slice(0, n); },
-    celebPosts: async (id, b, n) => { calls.push(`celeb:${id}`); return before(celeb, b).slice(0, n); },
+    celebsIFollow: async () => ["star"],
+    followingAmong: async (_me, ids) => new Set(ids.filter((id) => ["alice", "star"].includes(id))),
+    feedPage: async (_me, b, n) => { calls.push(`feed<${b ?? ""}`); const all = before(feed, b); return { refs: all.slice(0, n), truncated: all.length > n }; },
+    celebPosts: async (id, b, n) => { calls.push(`celeb:${id}`); const all = before(celeb, b); return { refs: all.slice(0, n), truncated: all.length > n }; },
     hydrate: async (refs, me) => refs.map((r) => ({ postId: r.postId, author: { userId: r.authorId, username: r.authorId }, viewer: me })),
   };
 }

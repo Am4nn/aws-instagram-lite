@@ -27,7 +27,7 @@ export function addSocial(stack: CoreStack, opts: { bus: events.EventBus; media:
 
   // ---------- follow / unfollow ----------
   // UserFollowed is emitted by the table stream (step 5 CDC), so this Lambda needs no bus access.
-  const social = stack.addFunction("social", "social/handler.ts");
+  const social = stack.addFunction("social", "social/handler.ts", { env: { CELEB_THRESHOLD: threshold } });
   stack.route("POST", "/users/{userId}/follow", social);
   stack.route("DELETE", "/users/{userId}/follow", social);
 

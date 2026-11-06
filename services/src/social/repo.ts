@@ -1,5 +1,5 @@
 import {
-  DynamoDBDocumentClient, GetCommand, QueryCommand, TransactWriteCommand,
+  BatchGetCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, TransactWriteCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { profileKey } from "../users/repo.js";
 import { conditionalWrite } from "../lib/tx.js";
@@ -8,6 +8,8 @@ import { conditionalWrite } from "../lib/tx.js";
 // "who follows me" are single-partition queries.
 export const followsKey = (me: string, other: string) => ({ pk: `USER#${me}`, sk: `FOLLOWS#${other}` });
 export const followerKey = (other: string, me: string) => ({ pk: `USER#${other}`, sk: `FOLLOWER#${me}` });
+/** Celeb registry: one small partition listing every celeb. Feeds read it (cached) to know whom to pull. */
+export const celebKey = (userId: string) => ({ pk: "CELEBS", sk: `USER#${userId}` });
 
 
 export type FollowsRepo = ReturnType<typeof makeFollowsRepo>;
@@ -82,5 +84,49 @@ export function makeFollowsRepo(doc: DynamoDBDocumentClient, table: string) {
   /** Followers in pages: fan-out walks these without loading millions into memory. */
   const listFollowers = (userId: string, pageSize = 500) => edges(userId, "FOLLOWER#", pageSize);
 
-  return { follow, unfollow, isFollowing, listFollowing, listFollowers };
+  /**
+   * Called after a follow. Once someone reaches the threshold they're registered as a celeb:
+   * their posts stop being pushed and are pulled at read time instead. Sticky on purpose (no
+   * removal on unfollow): otherwise posts made while celeb, never pushed, would vanish from feeds.
+   */
+  async function registerCelebIfNeeded(userId: string, threshold: number): Promise<boolean> {
+    const { Item } = await doc.send(new GetCommand({ TableName: table, Key: profileKey(userId), ConsistentRead: true }));
+    if (((Item?.followerCount as number) ?? 0) < threshold) return false;
+    await doc.send(new PutCommand({ TableName: table, Item: { ...celebKey(userId), userId } }));
+    return true;
+  }
+
+  async function isCeleb(userId: string): Promise<boolean> {
+    return Boolean((await doc.send(new GetCommand({ TableName: table, Key: celebKey(userId) }))).Item);
+  }
+
+  async function listCelebs(): Promise<string[]> {
+    const out: string[] = [];
+    let ExclusiveStartKey: Record<string, unknown> | undefined;
+    do {
+      const r = await doc.send(new QueryCommand({
+        TableName: table, KeyConditionExpression: "pk = :pk", ExpressionAttributeValues: { ":pk": "CELEBS" }, ExclusiveStartKey,
+      }));
+      out.push(...(r.Items ?? []).map((i) => i.userId as string));
+      ExclusiveStartKey = r.LastEvaluatedKey;
+    } while (ExclusiveStartKey);
+    return out;
+  }
+
+  /** Which of these users do I follow? One BatchGet of my follow edges (no full following list). */
+  async function followingAmong(me: string, userIds: string[]): Promise<Set<string>> {
+    const out = new Set<string>();
+    const ids = [...new Set(userIds)];
+    for (let i = 0; i < ids.length; i += 100) {
+      let keys: Record<string, unknown>[] | undefined = ids.slice(i, i + 100).map((id) => followsKey(me, id));
+      for (let attempt = 0; keys?.length && attempt < 5; attempt++) {
+        const r = await doc.send(new BatchGetCommand({ RequestItems: { [table]: { Keys: keys } } }));
+        for (const item of r.Responses?.[table] ?? []) out.add(item.userId as string);
+        keys = r.UnprocessedKeys?.[table]?.Keys as Record<string, unknown>[] | undefined;
+      }
+    }
+    return out;
+  }
+
+  return { follow, unfollow, isFollowing, listFollowing, listFollowers, registerCelebIfNeeded, isCeleb, listCelebs, followingAmong };
 }

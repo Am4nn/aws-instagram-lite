@@ -6,11 +6,14 @@ describe("makeLogger (structured JSON logs)", () => {
     const lines: string[] = [];
     const spy = vi.spyOn(process.stdout, "write").mockImplementation((s) => { lines.push(String(s)); return true; });
     const spy2 = vi.spyOn(console, "info").mockImplementation((s) => { lines.push(String(s)); });
+    const prev = process.env.LOG_LEVEL;
+    process.env.LOG_LEVEL = "INFO";
     try {
       const log = makeLogger("fanout");
       log.appendKeys({ messageId: "m1" });
       log.info("fanned out", { postId: "p1", followers: 3 });
     } finally {
+      process.env.LOG_LEVEL = prev;
       spy.mockRestore();
       spy2.mockRestore();
     }

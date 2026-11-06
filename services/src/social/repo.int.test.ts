@@ -49,4 +49,17 @@ describe("follows repo (DynamoDB on Floci)", () => {
     expect(pages.flat().sort()).toEqual([f1, f2, f3].sort());
     expect(pages.length).toBeGreaterThanOrEqual(2);
   });
+
+  it("registers a user as a celeb once they reach the threshold, and finds which celebs I follow", async () => {
+    const [star, a, b, c, me] = [await newUser(), await newUser(), await newUser(), await newUser(), await newUser()];
+    for (const f of [a, b]) await follows.follow(f, star);
+    expect(await follows.registerCelebIfNeeded(star, 3)).toBe(false);
+    expect(await follows.isCeleb(star)).toBe(false);
+    await follows.follow(c, star);
+    expect(await follows.registerCelebIfNeeded(star, 3)).toBe(true);
+    expect(await follows.isCeleb(star)).toBe(true);
+    expect(await follows.listCelebs()).toContain(star);
+    await follows.follow(me, a);
+    expect(await follows.followingAmong(me, [star, a, b])).toEqual(new Set([a]));
+  });
 });

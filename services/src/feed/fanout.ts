@@ -1,7 +1,6 @@
 import type { SQSEvent, SQSBatchResponse } from "aws-lambda";
 import { BatchWriteCommand, type DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { docClient, tableName } from "../lib/db.js";
-import { makeUsersRepo } from "../users/repo.js";
 import { makePostsRepo } from "../posts/repo.js";
 import { makeFollowsRepo } from "../social/repo.js";
 import { makeLogger } from "../lib/log.js";
@@ -17,8 +16,8 @@ const FEED_TTL_SECONDS = 30 * 24 * 3600;
 const BACKFILL = 10;
 
 type Deps = {
-  threshold: number;
-  getFollowerCount: (userId: string) => Promise<number | null>;
+  /** Celeb registry lookup (social/repo.ts): celebs' posts are pulled at read time, not pushed. */
+  isCeleb: (userId: string) => Promise<boolean>;
   getPost: (postId: string) => Promise<PostRef | null>;
   followers: (userId: string) => AsyncIterable<string[]>;
   recentPosts: (userId: string, limit: number) => Promise<PostRef[]>;
@@ -32,7 +31,7 @@ type Deps = {
  * Writes are idempotent (same key = overwrite), so redelivered events are harmless.
  */
 export function makeFanout(d: Deps) {
-  const isCeleb = async (userId: string) => ((await d.getFollowerCount(userId)) ?? 0) >= d.threshold;
+  const { isCeleb } = d;
   const item = (ownerId: string, p: PostRef): FeedItem =>
     ({ ownerId, postId: p.postId, authorId: p.userId, createdAt: p.createdAt });
 
@@ -95,12 +94,10 @@ export const handler = (event: SQSEvent) => {
   real ??= (() => {
     const doc = docClient();
     const table = tableName();
-    const users = makeUsersRepo(doc, table);
     const posts = makePostsRepo(doc, table);
     const follows = makeFollowsRepo(doc, table);
     return makeFanout({
-      threshold: Number(process.env.CELEB_THRESHOLD ?? 10000),
-      getFollowerCount: async (id) => (await users.getProfile(id))?.followerCount ?? null,
+      isCeleb: (id) => follows.isCeleb(id),
       getPost: async (id) => {
         const p = await posts.get(id);
         return p && p.status === "READY" ? p : null;
