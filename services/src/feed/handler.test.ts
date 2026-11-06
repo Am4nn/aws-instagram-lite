@@ -21,7 +21,7 @@ function deps(): FeedDeps & { calls: string[] } {
     followerCounts: async (ids) => new Map(ids.map((id) => [id, id === "star" ? 5 : 1])),
     feedPage: async (_me, b, n) => { calls.push(`feed<${b ?? ""}`); return before(feed, b).slice(0, n); },
     celebPosts: async (id, b, n) => { calls.push(`celeb:${id}`); return before(celeb, b).slice(0, n); },
-    hydrate: async (refs) => refs.map((r) => ({ postId: r.postId, author: { userId: r.authorId, username: r.authorId } })),
+    hydrate: async (refs, me) => refs.map((r) => ({ postId: r.postId, author: { userId: r.authorId, username: r.authorId }, viewer: me })),
   };
 }
 
@@ -46,6 +46,7 @@ describe("feed handler", () => {
     expect(d.calls).toContain("celeb:star");
     expect(d.calls).not.toContain("celeb:alice");
     expect(r.body.next).toBeUndefined();
+    expect(r.body.items[0].viewer).toBe("bob"); // hydrate knows the viewer (for likedByMe)
   });
 
   it("returns a signed next cursor and the next page continues after it", async () => {

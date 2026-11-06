@@ -19,6 +19,7 @@ function deps(over: Partial<PostsDeps> = {}): PostsDeps & { posts: Map<string, P
     },
     presignPut: async (key, type, size) => `https://s3/put/${key}?type=${type}&size=${size}`,
     presignGet: async (key) => `https://s3/get/${key}`,
+    likedBy: async (ids, me) => new Set(me === "fan" ? ids : []),
     ...over,
   };
 }
@@ -57,7 +58,8 @@ describe("posts handler", () => {
     expect(pending.body.thumbUrl).toBeUndefined();
     d.posts.set("p1", { ...d.posts.get("p1")!, status: "READY", media: { thumb: "media/p1/thumb.jpg", full: "media/p1/full.jpg", width: 1, height: 1 } });
     const ready = await call(h, ev("GET /posts/{id}", { params: { id: "p1" } }));
-    expect(ready.body).toMatchObject({ thumbUrl: "https://s3/get/media/p1/thumb.jpg", fullUrl: "https://s3/get/media/p1/full.jpg" });
+    expect(ready.body).toMatchObject({ thumbUrl: "https://s3/get/media/p1/thumb.jpg", fullUrl: "https://s3/get/media/p1/full.jpg", likedByMe: false });
+    expect((await call(h, ev("GET /posts/{id}", { sub: "fan", params: { id: "p1" } }))).body.likedByMe).toBe(true);
   });
 
   it("GET /posts/{id} → 404 for unknown posts and for other users' unfinished posts", async () => {

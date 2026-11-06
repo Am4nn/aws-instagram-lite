@@ -8,6 +8,7 @@ import { makeUsersRepo } from "../users/repo.js";
 import { makePostsRepo, type Post, type PostsRepo } from "./repo.js";
 import { uploadKey } from "./keys.js";
 import { validateCreatePost } from "./validate.js";
+import { makeEngageRepo } from "../engage/repo.js";
 
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 
@@ -16,6 +17,7 @@ export type PostsDeps = {
   hasProfile: (userId: string) => Promise<boolean>;
   presignPut: (key: string, contentType: string, size: number) => Promise<string>;
   presignGet: (key: string) => Promise<string>;
+  likedBy: (postIds: string[], userId: string) => Promise<Set<string>>;
 };
 
 /** Adds short-lived image URLs (media bucket is private). */
@@ -42,7 +44,8 @@ export function makeHandler(d: PostsDeps) {
         const post = await d.repo.get(event.pathParameters?.id ?? "");
         // Only the author may see a post that isn't READY yet.
         if (!post || (post.status !== "READY" && post.userId !== me)) return json(404, { error: "post not found" });
-        return json(200, await withUrls(post, d.presignGet));
+        const liked = await d.likedBy([post.postId], me);
+        return json(200, { ...(await withUrls(post, d.presignGet)), likedByMe: liked.has(post.postId) });
       }
       case "GET /users/{userId}/posts": {
         const items = await d.repo.listByUser(event.pathParameters?.userId ?? "");
@@ -68,6 +71,7 @@ function realDeps(): PostsDeps {
       }), { expiresIn: 300, signableHeaders: new Set(["content-type", "content-length"]) }),
     presignGet: (key) =>
       getSignedUrl(s3, new GetObjectCommand({ Bucket: process.env.MEDIA_BUCKET, Key: key }), { expiresIn: 3600 }),
+    likedBy: (ids, me) => makeEngageRepo(docClient(), tableName()).likedBy(ids, me),
   };
 }
 

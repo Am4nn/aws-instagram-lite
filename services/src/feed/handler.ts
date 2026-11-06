@@ -9,6 +9,7 @@ import { docClient, tableName } from "../lib/db.js";
 import { profileKey } from "../users/repo.js";
 import { postKey } from "../posts/repo.js";
 import { makeFollowsRepo } from "../social/repo.js";
+import { makeEngageRepo } from "../engage/repo.js";
 import { signCursor, verifyCursor } from "./cursor.js";
 import { mergeFeed, type Ref } from "./merge.js";
 
@@ -22,7 +23,7 @@ export type FeedDeps = {
   followerCounts: (userIds: string[]) => Promise<Map<string, number>>;
   feedPage: (me: string, before: string | undefined, limit: number) => Promise<Ref[]>;
   celebPosts: (userId: string, before: string | undefined, limit: number) => Promise<Ref[]>;
-  hydrate: (refs: Ref[]) => Promise<unknown[]>;
+  hydrate: (refs: Ref[], viewerId: string) => Promise<unknown[]>;
 };
 
 export function makeHandler(d: FeedDeps) {
@@ -44,7 +45,7 @@ export function makeHandler(d: FeedDeps) {
     ]);
     const page = mergeFeed({ feedItems, celebPosts: celebLists.flat(), following: new Set(following), me, limit: pageSize });
     return json(200, {
-      items: await d.hydrate(page.items),
+      items: await d.hydrate(page.items, me),
       ...(page.next ? { next: signCursor(page.next, key) } : {}),
     });
   };
@@ -104,7 +105,8 @@ function realDeps(): FeedDeps {
         .map((i) => ({ postId: i.postId, authorId: i.userId, sortKey: `${i.createdAt}#${i.postId}` }))
         .filter((ref) => !before || ref.sortKey < before);
     },
-    hydrate: async (refs) => {
+    hydrate: async (refs, viewerId) => {
+      const liked = await makeEngageRepo(doc, table).likedBy(refs.map((r) => r.postId), viewerId);
       const posts = await batchGet(doc, table, refs.map((r) => postKey(r.postId)));
       const authors = await batchGet(doc, table, [...new Set(refs.map((r) => r.authorId))].map(profileKey));
       const byPost = new Map(posts.map((p) => [p.postId as string, p]));
@@ -116,7 +118,7 @@ function realDeps(): FeedDeps {
         const a = byUser.get(r.authorId);
         out.push({
           postId: p.postId, userId: p.userId, caption: p.caption, createdAt: p.createdAt,
-          likeCount: p.likeCount ?? 0, commentCount: p.commentCount ?? 0,
+          likeCount: p.likeCount ?? 0, commentCount: p.commentCount ?? 0, likedByMe: liked.has(r.postId),
           author: { userId: r.authorId, username: (a?.username as string) ?? "unknown" },
           thumbUrl: await presign(p.media.thumb), fullUrl: await presign(p.media.full),
         });
