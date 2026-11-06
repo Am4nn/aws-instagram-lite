@@ -64,4 +64,13 @@ describe("users handler", () => {
     expect((await call(h, ev("GET /users/{username}", { params: { username: "ANN" } }))).body).toMatchObject({ username: "ann" });
     expect((await call(h, ev("GET /users/{username}", { params: { username: "zed" } }))).status).toBe(404);
   });
+
+  it("GET /users/{username} tells the caller whether they follow that user", async () => {
+    const h = makeHandler(fakeRepo(), async (me, other) => me === "u2" && other === "u1");
+    await call(h, ev("PUT /me", { sub: "u1", body: JSON.stringify({ username: "ann" }) }));
+    expect((await call(h, ev("GET /users/{username}", { sub: "u2", params: { username: "ann" } }))).body)
+      .toMatchObject({ username: "ann", isFollowing: true });
+    expect((await call(h, ev("GET /users/{username}", { sub: "u3", params: { username: "ann" } }))).body)
+      .toMatchObject({ isFollowing: false });
+  });
 });
