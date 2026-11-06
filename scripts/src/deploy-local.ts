@@ -36,8 +36,11 @@ async function main() {
     "deploy", "ig-local-core", "-c", "stage=local",
     "--require-approval", "never", "--outputs-file", "cdk.out/outputs-local.json",
   ]);
-  const api = localApiUrl(readOutputs("ig-local-core").ApiUrl);
-  writeFileSync(webEnvPath, webEnvFile(api));
+  const out = readOutputs("ig-local-core");
+  const api = localApiUrl(out.ApiUrl);
+  writeFileSync(webEnvPath, webEnvFile({
+    apiUrl: api, userPoolClientId: out.UserPoolClientId, cognitoEndpoint: "http://localhost:4566",
+  }));
   console.log(`\nLocal API: ${api}\nTry: curl ${api}/health\nWrote web/.env.local, now run: npm -w web run dev\n`);
 }
 

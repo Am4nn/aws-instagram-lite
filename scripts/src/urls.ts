@@ -5,7 +5,12 @@ export function localApiUrl(awsUrl: string): string {
   return `http://${m[1]}.execute-api.localhost.floci.io:4566`;
 }
 
-/** Contents of web/.env.local; the API id changes on every fresh deploy. */
-export function webEnvFile(apiUrl: string): string {
-  return `NEXT_PUBLIC_API_URL=${apiUrl}\n`;
+/** Contents of web/.env.local; ids change on every fresh deploy. */
+export function webEnvFile(v: { apiUrl: string; userPoolClientId: string; cognitoEndpoint: string }): string {
+  return [
+    `NEXT_PUBLIC_API_URL=${v.apiUrl}`,
+    `NEXT_PUBLIC_USER_POOL_CLIENT_ID=${v.userPoolClientId}`,
+    `NEXT_PUBLIC_COGNITO_ENDPOINT=${v.cognitoEndpoint}`,
+    "",
+  ].join("\n");
 }

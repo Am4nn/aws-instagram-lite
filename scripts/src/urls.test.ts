@@ -13,8 +13,15 @@ describe("localApiUrl", () => {
 });
 
 describe("webEnvFile", () => {
-  it("writes the API URL for Next.js to read at build/dev time", () => {
-    expect(webEnvFile("http://abc.execute-api.localhost.floci.io:4566"))
-      .toBe("NEXT_PUBLIC_API_URL=http://abc.execute-api.localhost.floci.io:4566\n");
+  it("writes API URL, Cognito client id and Cognito endpoint for Next.js", () => {
+    expect(webEnvFile({
+      apiUrl: "http://abc.execute-api.localhost.floci.io:4566",
+      userPoolClientId: "client123",
+      cognitoEndpoint: "http://localhost:4566",
+    })).toBe(
+      "NEXT_PUBLIC_API_URL=http://abc.execute-api.localhost.floci.io:4566\n" +
+      "NEXT_PUBLIC_USER_POOL_CLIENT_ID=client123\n" +
+      "NEXT_PUBLIC_COGNITO_ENDPOINT=http://localhost:4566\n",
+    );
   });
 });
