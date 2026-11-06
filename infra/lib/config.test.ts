@@ -18,7 +18,6 @@ describe("loadConfig", () => {
   it("builds the aws stage with no endpoint override", () => {
     expect(loadConfig("aws", {})).toEqual({
       stage: "aws", prefix: "ig-aws", celebThreshold: 10000, isLocal: false,
-      cognitoIssuerBase: "https://cognito-idp.us-east-1.amazonaws.com",
     });
   });
 

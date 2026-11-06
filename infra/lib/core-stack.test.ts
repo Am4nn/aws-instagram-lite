@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { App } from "aws-cdk-lib";
-import { Template } from "aws-cdk-lib/assertions";
+import { Template, Match } from "aws-cdk-lib/assertions";
 import { CoreStack } from "./core-stack.js";
 import { loadConfig } from "./config.js";
 
@@ -47,6 +47,24 @@ describe("CoreStack", () => {
   it("routes GET /health on an HTTP API", () => {
     t.hasResourceProperties("AWS::ApiGatewayV2::Route", { RouteKey: "GET /health" });
     t.resourceCountIs("AWS::ApiGatewayV2::Api", 1);
+  });
+
+  it("has a Cognito user pool that auto-confirms via a PreSignUp trigger", () => {
+    t.resourceCountIs("AWS::Cognito::UserPool", 1);
+    t.hasResourceProperties("AWS::Cognito::UserPool", {
+      UserPoolName: "ig-local-users",
+      LambdaConfig: { PreSignUp: Match.anyValue() },
+    });
+    t.hasResourceProperties("AWS::Lambda::Function", { FunctionName: "ig-local-presignup" });
+  });
+
+  it("protects routes with a JWT authorizer whose issuer is Floci's local Cognito", () => {
+    t.hasResourceProperties("AWS::ApiGatewayV2::Authorizer", {
+      AuthorizerType: "JWT",
+      JwtConfiguration: {
+        Issuer: Match.objectLike({ "Fn::Join": ["", Match.arrayWith(["http://127.0.0.1:4566/"])] }),
+      },
+    });
   });
 
   it("uses no VPC, RDS or custom resources", () => {

@@ -17,7 +17,7 @@ import * as subs from "aws-cdk-lib/aws-sns-subscriptions";
 import * as secrets from "aws-cdk-lib/aws-secretsmanager";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cwActions from "aws-cdk-lib/aws-cloudwatch-actions";
-import type { StageConfig } from "./config.js";
+import { cognitoIssuer, type StageConfig } from "./config.js";
 
 export interface SpikeStackProps extends StackProps {
   config: StageConfig;
@@ -47,7 +47,7 @@ export class SpikeStack extends Stack {
       removalPolicy: RemovalPolicy.DESTROY,
     });
     const client = pool.addClient("Client", { authFlows: { userPassword: true }, generateSecret: false });
-    const issuer = `${props.config.cognitoIssuerBase}/${pool.userPoolId}`;
+    const issuer = cognitoIssuer(props.config, this.region, pool.userPoolId);
     const privateFn = inline(
       "Private",
       "exports.handler = async (e) => ({ statusCode: 200, headers: {'content-type':'application/json'}, body: JSON.stringify({ sub: e.requestContext.authorizer.jwt.claims.sub }) });",
