@@ -9,13 +9,13 @@ import { cleanStaleStacks } from "./stale.js";
 export const infraDir = fileURLToPath(new URL("../../infra/", import.meta.url));
 const webEnvPath = fileURLToPath(new URL("../../web/.env.local", import.meta.url));
 
-/** Run the CDK CLI inside infra/ with Floci env vars. Throws on non-zero exit. */
-export function cdk(args: string[]): void {
+/** Run the CDK CLI inside infra/ (default: with Floci env vars). Throws on non-zero exit. */
+export function cdk(args: string[], env: NodeJS.ProcessEnv = localEnv(process.env)): void {
   // Run the CLI through node directly: no shell, so the space in the path is safe.
   const cdkBin = createRequire(`${infraDir}package.json`).resolve("aws-cdk/bin/cdk");
   const res = spawnSync(process.execPath, [cdkBin, ...args], {
     cwd: infraDir,
-    env: localEnv(process.env),
+    env,
     stdio: "inherit",
   });
   if (res.status !== 0) throw new Error(`cdk ${args[0]} failed (exit ${res.status})`);

@@ -1,11 +1,14 @@
-/** Small API client used by the seed and smoke scripts (talks to the deployed local stack). */
+/** Small API client used by the seed and smoke scripts (talks to the deployed local or aws stack). */
 import {
   CognitoIdentityProviderClient, SignUpCommand, InitiateAuthCommand,
+  AdminCreateUserCommand, AdminSetUserPasswordCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 import { readOutputs } from "./deploy-local.js";
 import { localApiUrl } from "./urls.js";
+import { AWS_OUTPUTS_FILE, AWS_STACK } from "./aws.js";
 
-export type Ctx = { api: string; clientId: string };
+/** userPoolId set (aws) = create users as admin: the pool needs a verified email, Floci auto-confirms. */
+export type Ctx = { api: string; clientId: string; userPoolId?: string };
 export type Session = { login: string; userId: string; headers: Record<string, string> };
 
 export function localCtx(): Ctx {
@@ -13,13 +16,39 @@ export function localCtx(): Ctx {
   return { api: localApiUrl(out.ApiUrl), clientId: out.UserPoolClientId };
 }
 
+/** The aws stack (after `npm run deploy:aws`): real API URL, admin user creation. */
+export function awsCtx(): Ctx {
+  const out = readOutputs(AWS_STACK, AWS_OUTPUTS_FILE);
+  if (!out.ApiUrl) throw new Error(`no outputs for ${AWS_STACK}: run npm run deploy:aws first`);
+  return { api: out.ApiUrl.replace(/\/$/, ""), clientId: out.UserPoolClientId, userPoolId: out.UserPoolId };
+}
+
+/**
+ * aws: a confirmed user with a placeholder, verified email (<login>@example.com; no mail is sent)
+ * and a permanent password, i.e. ready to log in like a user who typed in their code.
+ */
+async function adminEnsureUser(idp: CognitoIdentityProviderClient, userPoolId: string, login: string, password: string) {
+  try {
+    await idp.send(new AdminCreateUserCommand({
+      UserPoolId: userPoolId, Username: login, MessageAction: "SUPPRESS",
+      UserAttributes: [{ Name: "email", Value: `${login}@example.com` }, { Name: "email_verified", Value: "true" }],
+    }));
+  } catch (e) {
+    if ((e as Error).name !== "UsernameExistsException") throw e;
+  }
+  await idp.send(new AdminSetUserPasswordCommand({ UserPoolId: userPoolId, Username: login, Password: password, Permanent: true }));
+}
+
 /** Sign up (if new) and sign in. Returns auth headers; userId is filled once a profile exists. */
 export async function signUpOrIn(c: Ctx, login: string, password = "password1"): Promise<Session> {
   const idp = new CognitoIdentityProviderClient({});
-  try {
-    await idp.send(new SignUpCommand({ ClientId: c.clientId, Username: login, Password: password }));
-  } catch (e) {
-    if ((e as Error).name !== "UsernameExistsException") throw e;
+  if (c.userPoolId) await adminEnsureUser(idp, c.userPoolId, login, password);
+  else {
+    try {
+      await idp.send(new SignUpCommand({ ClientId: c.clientId, Username: login, Password: password }));
+    } catch (e) {
+      if ((e as Error).name !== "UsernameExistsException") throw e;
+    }
   }
   const auth = await idp.send(new InitiateAuthCommand({
     ClientId: c.clientId, AuthFlow: "USER_PASSWORD_AUTH", AuthParameters: { USERNAME: login, PASSWORD: password },

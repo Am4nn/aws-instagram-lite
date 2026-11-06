@@ -34,13 +34,14 @@ export function ownBuckets(names: string[]): string[] {
 }
 
 type Version = { Key?: string; VersionId?: string };
+type ObjectId = { Key: string; VersionId?: string };
 
 /** DeleteObjects requests (max 1000 keys each) for every object version and delete marker. */
-export function deleteBatches(versions: Version[] | undefined, markers: Version[] | undefined): Version[][] {
-  const all = [...(versions ?? []), ...(markers ?? [])]
-    .filter((v) => v.Key)
+export function deleteBatches(versions: Version[] | undefined, markers: Version[] | undefined): ObjectId[][] {
+  const all: ObjectId[] = [...(versions ?? []), ...(markers ?? [])]
+    .filter((v): v is ObjectId => !!v.Key)
     .map((v) => (v.VersionId ? { Key: v.Key, VersionId: v.VersionId } : { Key: v.Key }));
-  const out: Version[][] = [];
+  const out: ObjectId[][] = [];
   for (let i = 0; i < all.length; i += 1000) out.push(all.slice(i, i + 1000));
   return out;
 }
