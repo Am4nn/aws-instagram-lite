@@ -36,3 +36,7 @@ None.
 - Lambda runs in Docker (`public.ecr.aws/lambda/nodejs:22`). The first invoke pulls the image (slow once), and warm calls take milliseconds.
 - CloudWatch alarms are really evaluated (OK → ALARM within about 10 s here, 1-3 min on AWS). SQS metric history outlives `cdk destroy`, so a recreated alarm with the same name can fire right away.
 - npm 11 blocks esbuild's postinstall script, and esbuild still works without it.
+- (step 2) Browser → Floci Cognito needs `FLOCI_SECURITY_EXTRA_CORS_ALLOWED_ORIGINS` (+ SDK headers in `..._ALLOWED_HEADERS`). Cognito PreSignUp Lambda triggers work.
+- (step 3) Inside Lambda, Floci injects `AWS_ENDPOINT_URL=http://localhost.floci.io:4566`; presigned URLs minted there also work from the browser (public DNS → 127.0.0.1). Step Functions retry with jitter + MaxAttempts 0 retriers work.
+- (step 5) DynamoDB Streams → Lambda with an `eventName: INSERT` filter works (MODIFY correctly filtered out). Floci runs transactions serially, so real-AWS `TransactionConflict` cancellations can't be reproduced locally; the code handles them anyway.
+- (step 6) `AWS::Logs::LogGroup` with a custom name is reported CREATE_COMPLETE but not created, and Lambda `LoggingConfig.LogGroup` is ignored (logs stay in the Lambda container: `docker logs`). Step Functions `ExecutionsFailed` metrics aren't emitted, so that alarm only fires on AWS. SQS DLQ alarms do work end to end.

@@ -36,4 +36,10 @@ Tick boxes as you go.
 - [ ] Code: `services/src/events/map.ts` (the whole CDC idea in 20 lines), `services/src/notify/worker.ts`
 - [ ] Try: like a post as bob, then log in as its author and open Activity
 
+## Step 6: Ops (logs, alarms, DLQs, redrive)
+- [ ] [06-ops.md](06-ops.md): do the "break it on purpose" exercise
+- [ ] [system-design-notes.md §9](system-design-notes.md#9-observability-and-reliability): observability + reliability
+- [ ] Code: `infra/lib/ops.ts` (alarms), `scripts/src/ops.ts` (the ops CLI), `services/src/lib/log.ts`
+- [ ] Re-read notes §1: the two feed details added after the code review (pagination floor, celeb registry)
+
 ## Every step has a "How big companies do it" table at the end. Read those for interview follow-ups.

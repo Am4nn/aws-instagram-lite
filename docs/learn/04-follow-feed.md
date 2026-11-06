@@ -40,8 +40,9 @@ flowchart LR
 ### 1. Hybrid fan-out (the big one)
 Read `system-design-notes.md §1` first. In code:
 - Push: `services/src/feed/fanout.ts` → `postPublished()`.
-- Pull: `services/src/feed/handler.ts` → `celebs = following.filter(followers ≥ threshold)`.
-- Merge: `services/src/feed/merge.ts`. It's a pure function, so it's easy to test.
+- Pull: `services/src/feed/handler.ts` → celebs I follow = cached **celeb registry** ∩ my follow edges.
+- Merge + paginate: `services/src/feed/page.ts` (the "floor" technique: see notes §1). A pure function with
+  regression tests for the cases that used to skip posts.
 
 ### 2. Why unfollow is a read-time filter
 Deleting your copies of someone's posts from your feed on unfollow means a scan + many deletes.
@@ -68,7 +69,7 @@ notifications will listen to the same events without touching this code.
 |---|---|
 | Feed items in DynamoDB | Feed lists in **Redis/Memcached** (in memory, capped at ~500–800 items per user), rebuilt from storage if lost |
 | Chronological | **Ranked** by ML (likelihood you'll like/comment), with "seen" tracking |
-| Celeb check reads all followed profiles per request | Celeb flag cached / stored on the follow edge; inactive users' feeds aren't precomputed at all |
+| Celeb registry cached 60 s per Lambda | Same idea in Redis/memcache; inactive users' feeds aren't precomputed at all |
 | One fan-out Lambda | Fan-out workers sharded by follower range; big accounts fanned out in batches over minutes |
 | Threshold 3 | Thresholds in the thousands–millions, tuned by measuring write cost vs read latency |
 

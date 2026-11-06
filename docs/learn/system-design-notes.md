@@ -43,7 +43,16 @@ cursor pagination, feed can be trimmed (keep last ~500 items).
 
 **In this project:** threshold = 3 locally so you can see both paths with test users.
 Built in step 4: push in `services/src/feed/fanout.ts`, pull + merge in `services/src/feed/handler.ts`
-and `merge.ts`. Log in as **bob** (seed data): alice/carol/dave are pushed, star (celeb) is pulled.
+and `page.ts`. Log in as **bob** (seed data): alice/carol/dave are pushed, star (celeb) is pulled.
+
+**Two details interviewers love (both learned the hard way in this project's code review):**
+1. **Merging paged sources:** each source (my feed, each celeb) returns only its newest N items.
+   If one was cut off at time T, it may still have unseen posts older than T, so never emit
+   older items from the others yet. Take the **newest cut-off among truncated sources as a floor**,
+   emit only above it, and continue from the floor (`services/src/feed/page.ts`).
+2. **Finding the celebs I follow cheaply:** keep a small **celeb registry** (cached), intersect it
+   with my follow edges, instead of loading everyone I follow on every request. Celebs stay celebs
+   (sticky), so posts made while they were celebs don't vanish from feeds.
 
 ---
 
@@ -213,3 +222,18 @@ flowchart LR
 ```
 
 **In this project:** `services/src/events/` (stream → events), `services/src/engage/repo.ts` (exact counters).
+
+---
+
+## 9. Observability and reliability
+
+**The question:** it's 3 a.m. and photos stopped appearing. How do you find out, and fix it?
+
+- **Detect:** alarms on user-facing symptoms (DLQ depth, error rate, latency, "photos ready within 30 s" SLO).
+- **Diagnose:** structured logs with correlation ids, metrics dashboards, distributed traces.
+- **Contain:** DLQs keep failed work, retries with backoff + jitter avoid stampedes, circuit breakers
+  stop hammering a dead dependency, idempotency makes retries safe.
+- **Recover:** fix → redrive the DLQ → verify. Write a blameless postmortem.
+
+**Interview angle:** name concrete alarms, explain at-least-once + DLQ + redrive, mention SLOs and
+error budgets, and say how you'd test failure (chaos experiments, game days).
