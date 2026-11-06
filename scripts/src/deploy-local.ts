@@ -1,12 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { assertFlociUp, flociEnv } from "./env.js";
-import { localApiUrl } from "./urls.js";
+import { localApiUrl, webEnvFile } from "./urls.js";
 import { cleanStaleStacks } from "./stale.js";
 
 export const infraDir = fileURLToPath(new URL("../../infra/", import.meta.url));
+const webEnvPath = fileURLToPath(new URL("../../web/.env.local", import.meta.url));
 
 /** Run the CDK CLI inside infra/ with Floci env vars. Throws on non-zero exit. */
 export function cdk(args: string[]): void {
@@ -36,7 +37,8 @@ async function main() {
     "--require-approval", "never", "--outputs-file", "cdk.out/outputs-local.json",
   ]);
   const api = localApiUrl(readOutputs("ig-local-core").ApiUrl);
-  console.log(`\nLocal API: ${api}\nTry: curl ${api}/health\n`);
+  writeFileSync(webEnvPath, webEnvFile(api));
+  console.log(`\nLocal API: ${api}\nTry: curl ${api}/health\nWrote web/.env.local, now run: npm -w web run dev\n`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

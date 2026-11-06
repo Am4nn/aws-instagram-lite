@@ -42,3 +42,30 @@ celebrity problem, land on hybrid. Mention: feed stores only IDs (not full posts
 cursor pagination, feed can be trimmed (keep last ~500 items).
 
 **In this project:** threshold = 3 locally so you can see both paths with test users.
+
+---
+
+## 2. Environments + infrastructure as code
+
+**The question:** how do teams ship the same system to dev, QA and prod without "works on my machine"?
+
+- **Infrastructure as code (IaC):** the cloud setup lives in git as code (CDK, Terraform).
+  It gets reviewed, versioned and repeated exactly. No console clicking.
+- **One template, many stages:** the same code with a `stage` parameter, so names, sizes and
+  settings differ per environment and nothing else does.
+- **Guardrails:** separate accounts per stage, plus checks that stop a deploy to the wrong one.
+- **Local emulators** (Floci, LocalStack) for the fast inner loop. **Real cloud** for what
+  emulators fake: IAM permissions, networking, limits, real latency.
+
+```mermaid
+flowchart LR
+  Code[CDK code in git] --> L[local<br/>Floci]
+  Code --> Q[qa<br/>real AWS]
+  Code --> P[prod<br/>real AWS]
+```
+
+**Interview angle:** mention IaC, immutable deploys (replace, don't patch), one account per
+environment, and the testing pyramid: unit → local emulator → cloud integration.
+
+**In this project:** `-c stage=local` → Floci, `-c stage=aws` → your real account. The guard
+lives in `infra/lib/config.ts`.

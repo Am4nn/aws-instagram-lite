@@ -4,3 +4,8 @@ export function localApiUrl(awsUrl: string): string {
   if (!m) throw new Error(`not an execute-api URL: ${awsUrl}`);
   return `http://${m[1]}.execute-api.localhost.floci.io:4566`;
 }
+
+/** Contents of web/.env.local; the API id changes on every fresh deploy. */
+export function webEnvFile(apiUrl: string): string {
+  return `NEXT_PUBLIC_API_URL=${apiUrl}\n`;
+}
