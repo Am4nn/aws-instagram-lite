@@ -190,6 +190,31 @@ describe("CoreStack", () => {
     });
   });
 
+  describe("ops", () => {
+    it("alarms on every DLQ and on failed pipeline runs, notifying the ops topic", () => {
+      t.hasResourceProperties("AWS::SNS::Topic", { TopicName: "ig-local-ops" });
+      for (const q of ["uploads", "fanout", "notify"]) {
+        t.hasResourceProperties("AWS::CloudWatch::Alarm", {
+          AlarmName: `ig-local-${q}-dlq-not-empty`, Threshold: 0, ComparisonOperator: "GreaterThanThreshold",
+          TreatMissingData: "notBreaching", AlarmActions: [Match.anyValue()],
+        });
+      }
+      t.hasResourceProperties("AWS::CloudWatch::Alarm", { AlarmName: "ig-local-pipeline-failed", MetricName: "ExecutionsFailed" });
+    });
+
+    it("has a local-only inbox queue subscribed to the ops topic", () => {
+      t.hasResourceProperties("AWS::SQS::Queue", { QueueName: "ig-local-ops-inbox" });
+      t.hasResourceProperties("AWS::SNS::Subscription", { Protocol: "sqs", RawMessageDelivery: true });
+    });
+
+    it("gives every function a log group with 2-week retention (no logs kept forever)", () => {
+      t.hasResourceProperties("AWS::Logs::LogGroup", { LogGroupName: "/ig/ig-local/fanout", RetentionInDays: 14 });
+      const fns = Object.keys(t.findResources("AWS::Lambda::Function")).length;
+      const groups = Object.keys(t.findResources("AWS::Logs::LogGroup")).length;
+      expect(groups).toBeGreaterThanOrEqual(fns - 1); // CDK's own helper functions may not have one
+    });
+  });
+
   it("uses no VPC, RDS or custom resources", () => {
     const types = Object.values(t.toJSON().Resources as Record<string, { Type: string }>).map((r) => r.Type);
     expect(types.filter((x) => /^(AWS::EC2::|AWS::RDS::|Custom::|AWS::CloudFormation::CustomResource)/.test(x))).toEqual([]);

@@ -13,6 +13,8 @@ import { cognitoIssuer, type StageConfig } from "./config.js";
 import { addPipeline } from "./pipeline.js";
 import { addSocial } from "./social.js";
 import { addEngage } from "./engage.js";
+import { addOps } from "./ops.js";
+import * as logs from "aws-cdk-lib/aws-logs";
 
 /** Path to a handler file in services/src */
 export const servicePath = (file: string) =>
@@ -102,10 +104,16 @@ export class CoreStack extends Stack {
     this.route("GET", "/users/{userId}/posts", posts);
 
     // ---------- Follow + feed (step 4) ----------
-    addSocial(this, { bus: pipeline.bus, media: pipeline.media });
+    const social = addSocial(this, { bus: pipeline.bus, media: pipeline.media });
 
     // ---------- Likes, comments, notifications (step 5) ----------
-    addEngage(this, { bus: pipeline.bus });
+    const engage = addEngage(this, { bus: pipeline.bus });
+
+    // ---------- Ops: alarms + ops topic (step 6) ----------
+    addOps(this, {
+      dlqs: { uploads: pipeline.dlq, fanout: social.fanoutDlq, notify: engage.notifyDlq },
+      pipeline: pipeline.machine,
+    });
 
     new CfnOutput(this, "ApiUrl", { value: this.api.apiEndpoint });
     new CfnOutput(this, "TableName", { value: this.table.tableName });
@@ -118,8 +126,16 @@ export class CoreStack extends Stack {
     name: string, entry: string,
     opts: { env?: Record<string, string>; tableAccess?: boolean; memorySize?: number; timeout?: number } = {},
   ): NodejsFunction {
+    // Explicit log group: bounded retention + deleted with the stack. Custom name, because Lambda
+    // auto-creates /aws/lambda/<fn> on first run and CloudFormation can't "create" one that exists.
+    const logGroup = new logs.LogGroup(this, `Logs-${name}`, {
+      logGroupName: `/ig/${this.stageConfig.prefix}/${name}`,
+      retention: logs.RetentionDays.TWO_WEEKS,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
     const fn = new NodejsFunction(this, `Fn-${name}`, {
       functionName: `${this.stageConfig.prefix}-${name}`,
+      logGroup,
       entry: servicePath(entry),
       runtime: lambda.Runtime.NODEJS_22_X,
       memorySize: opts.memorySize ?? 256,

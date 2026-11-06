@@ -7,7 +7,8 @@
     "deploy-local": "tsx src/deploy-local.ts",
     "spike": "tsx src/spike-check.ts",
     "smoke": "tsx src/smoke.ts",
-    "seed": "tsx src/seed.ts"
+    "seed": "tsx src/seed.ts",
+    "ops": "tsx src/ops.ts"
   },
   "dependencies": {
     "@aws-sdk/client-cloudformation": "^3.1163.0",

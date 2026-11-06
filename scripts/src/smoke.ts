@@ -4,6 +4,7 @@
  *  pipeline: POST /posts → PUT PNG to S3 → READY → in grid, postCount 1; a fake PNG → FAILED
  *  feed:     seeds demo users; bob's feed = pushed + celeb-pulled posts, paged, unfollow/refollow
  *  engage:   likes/comments counts, notifications via CDC (like, comment, follow; not self), mark read
+ *  ops:      (explicit only, ~4 min) poison message → DLQ → alarm → ops inbox → redrive
  *  ui:       (needs `npm -w web run dev`) create account → username → upload via /new → grid shows it
  */
 import { randomUUID } from "node:crypto";
@@ -20,6 +21,8 @@ import { readOutputs } from "./deploy-local.js";
 import { localApiUrl } from "./urls.js";
 import { makePng } from "./png.js";
 import { seed } from "./seed.js";
+import { chaos, depth, inbox, redrive, purge, queueUrl } from "./ops.js";
+import { SQSClient, PurgeQueueCommand } from "@aws-sdk/client-sqs";
 import { call, eventually, signUpOrIn, ensureProfile, uploadPhoto, waitForStatus as waitPost, type Session } from "./client.js";
 
 const WEB = "http://localhost:3000";
@@ -238,6 +241,19 @@ async function engageFlow(c: Ctx) {
   ok(zedFeed.body.items.some((i: { postId: string }) => i.postId === postId), "engage: follow (via CDC) backfilled zed's feed");
 }
 
+async function opsFlow() {
+  await inbox(); // drain old alarm notifications
+  await purge("notify");
+  await chaos();
+  const dlqDepth = await eventually(() => depth("notify-dlq"), (n) => n >= 1, 300000);
+  ok(dlqDepth >= 1, "ops: poison message gave up after 3 tries and landed in the notify DLQ");
+  const msgs = await eventually(() => inbox(5), (m) => m.some((x) => x.includes("ig-local-notify-dlq-not-empty") && x.includes("ALARM")), 180000);
+  ok(msgs.some((x) => x.includes("ig-local-notify-dlq-not-empty")), "ops: DLQ alarm fired and notified the ops topic");
+  ok((await redrive("notify")) >= 1 && (await depth("notify-dlq")) === 0, "ops: redrive moved the message back to the source queue");
+  // It's still poison, so drop it rather than let it cycle back
+  await new SQSClient({ useQueueUrlAsEndpoint: false }).send(new PurgeQueueCommand({ QueueUrl: await queueUrl("notify") }));
+}
+
 async function main() {
   await assertFlociUp();
   useLocalEnv();
@@ -249,6 +265,7 @@ async function main() {
   if (!only || only === "feed") await feedFlow(c);
   if (!only || only === "engage") await engageFlow(c);
   if (!only || only === "ui") await uiFlow();
+  if (only === "ops") await opsFlow(); // slow (~4 min): run explicitly with `npm run smoke ops`
 }
 
 main().catch((e) => { console.error(String(e.message ?? e)); process.exit(1); });

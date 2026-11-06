@@ -14,7 +14,8 @@
     "deploy:local": "npm -w scripts run deploy-local",
     "spike": "npm -w scripts run spike",
     "smoke": "npm -w scripts run smoke",
-    "seed": "npm -w scripts run seed"
+    "seed": "npm -w scripts run seed",
+    "ops": "npm -w scripts run ops --"
   },
   "devDependencies": {
     "@types/node": "^22",
