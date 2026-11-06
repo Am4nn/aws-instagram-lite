@@ -16,5 +16,12 @@ Tick boxes as you go.
 - [ ] Code: `services/src/users/repo.ts` (the transaction), `web/lib/auth.ts`
 - [ ] Try: decode your token at jwt.io and find `sub`, `iss`, `aud`, `exp`
 
+## Step 3: Photo uploads (S3, SQS, Step Functions, EventBridge)
+- [ ] [03-upload-pipeline.md](03-upload-pipeline.md): presigned upload → queue → workflow
+- [ ] [system-design-notes.md §5](system-design-notes.md#5-file-uploads-at-scale): uploads at scale
+- [ ] [system-design-notes.md §6](system-design-notes.md#6-queues-workflows-and-failure-handling): queues, retries, idempotency
+- [ ] Code: `infra/lib/pipeline.ts` (the whole pipeline in one file), `services/src/pipeline/*`
+- [ ] Try: upload a photo, then look at the Step Functions execution history (commands in the doc)
+
 ## Big system design topics (come back after step 4)
 - [ ] [system-design-notes.md §1](system-design-notes.md#1-news-feed-how-do-you-build-the-home-feed): news feed fan-out

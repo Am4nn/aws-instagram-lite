@@ -116,3 +116,46 @@ DynamoDB gives predictable single-digit-ms reads at any scale, but you must know
 
 **In this project:** profile + username claim (`services/src/users/repo.ts`); the race test
 proves only one of two simultaneous claims wins.
+
+---
+
+## 5. File uploads at scale
+
+**The question:** users upload photos/videos. How do you accept them without melting your API servers?
+
+- **Never stream files through your API.** Hand out a **presigned URL** and let the client upload
+  straight to object storage (S3). The API only signs the URL (milliseconds).
+- **Big files:** multipart upload (parallel chunks, resumable). **Limits:** presigned POST policy
+  (size, type) or validate afterwards.
+- **Process asynchronously:** storage event → queue → workers (thumbnails, transcoding, moderation).
+  The user sees "processing…" and the post appears when ready.
+- **Serve through a CDN** (CloudFront) with immutable file names, so caches can keep them forever.
+
+```mermaid
+flowchart LR
+  C[Client] -->|get signed URL| A[API]
+  C -->|upload bytes| S3[(Object storage)]
+  S3 -->|event| Q[Queue] --> W[Workers] --> S3b[(Processed)]
+  S3b --> CDN[CDN] --> C
+```
+
+---
+
+## 6. Queues, workflows and failure handling
+
+**The question:** a multi-step background job (validate → resize → save). How do you make it reliable?
+
+- **Queue (SQS):** decouples producer from consumer, absorbs spikes, retries automatically.
+  **Visibility timeout** = how long a message hides while being worked on. **DLQ** = where messages
+  go after N failures, so one bad message can't block or loop forever.
+- **At-least-once delivery** means duplicates are normal, so make consumers **idempotent**
+  (conditional writes, dedupe keys, unique execution names).
+- **Workflow engine (Step Functions):** explicit steps, per-step retries with exponential backoff,
+  catch → compensation (mark FAILED). You can see every run.
+- **Orchestration vs choreography:** a central coordinator (workflow) vs services reacting to
+  events (EventBridge). Orchestration is easier to follow; choreography is more decoupled.
+- **Backpressure:** if workers are slow, the queue grows instead of requests failing. Monitor queue
+  age/depth and alarm on it (step 6).
+
+**In this project:** S3 → SQS (+DLQ) → starter → Step Functions; idempotent via execution name =
+postId and `status = PENDING` condition (`services/src/posts/repo.ts` → `markReady`).

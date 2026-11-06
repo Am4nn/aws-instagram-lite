@@ -1,0 +1,150 @@
+/**
+ * End-to-end checks against Floci (npm run smoke). Each section prints ✅ lines.
+ *  auth:     sign up → GET /me 404 → PUT /me → GET /users/{NAME} → no token 401
+ *  pipeline: POST /posts → PUT PNG to S3 → READY → in grid, postCount 1; a fake PNG → FAILED
+ *  ui:       (needs `npm -w web run dev`) create account → username → upload via /new → grid shows it
+ */
+import { randomUUID } from "node:crypto";
+import { existsSync, writeFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  CognitoIdentityProviderClient, SignUpCommand, InitiateAuthCommand,
+} from "@aws-sdk/client-cognito-identity-provider";
+import puppeteer from "puppeteer-core";
+import { assertFlociUp, useLocalEnv } from "./env.js";
+import { readOutputs } from "./deploy-local.js";
+import { localApiUrl } from "./urls.js";
+import { makePng } from "./png.js";
+
+const WEB = "http://localhost:3000";
+const CHROME = [
+  "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+].find(existsSync);
+const img = (name: string) => fileURLToPath(new URL(`../../docs/learn/img/${name}`, import.meta.url));
+
+function ok(cond: unknown, msg: string): asserts cond {
+  if (!cond) throw new Error(`FAIL: ${msg}`);
+  console.log(`✅ ${msg}`);
+}
+
+type Ctx = { api: string; clientId: string };
+type User = { login: string; userId: string; headers: Record<string, string> };
+
+async function newUser(c: Ctx, withProfile = true): Promise<User> {
+  const idp = new CognitoIdentityProviderClient({});
+  const login = `smoke${randomUUID().slice(0, 6)}`;
+  await idp.send(new SignUpCommand({ ClientId: c.clientId, Username: login, Password: "password1" }));
+  const auth = await idp.send(new InitiateAuthCommand({
+    ClientId: c.clientId, AuthFlow: "USER_PASSWORD_AUTH", AuthParameters: { USERNAME: login, PASSWORD: "password1" },
+  }));
+  const headers = { authorization: `Bearer ${auth.AuthenticationResult!.IdToken}`, "content-type": "application/json" };
+  let userId = "";
+  if (withProfile) {
+    const r = await fetch(`${c.api}/me`, { method: "PUT", headers, body: JSON.stringify({ username: login }) });
+    userId = (await r.json()).userId;
+  }
+  return { login, userId, headers };
+}
+
+async function waitForStatus(c: Ctx, u: User, postId: string, timeoutMs = 60000) {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    const post = await fetch(`${c.api}/posts/${postId}`, { headers: u.headers }).then((r) => r.json());
+    if (post.status !== "PENDING") return post;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  throw new Error(`post ${postId} still PENDING after ${timeoutMs / 1000}s`);
+}
+
+async function authFlow(c: Ctx) {
+  const u = await newUser(c, false);
+  ok((await fetch(`${c.api}/me`, { headers: u.headers })).status === 404, "auth: GET /me before profile → 404");
+  const put = await fetch(`${c.api}/me`, { method: "PUT", headers: u.headers, body: JSON.stringify({ username: u.login, bio: "smoke" }) });
+  ok(put.status === 200, "auth: PUT /me → 200");
+  const got = await fetch(`${c.api}/users/${u.login.toUpperCase()}`, { headers: u.headers }).then((r) => r.json());
+  ok(got.username === u.login, "auth: GET /users/{NAME} is case-insensitive");
+  ok((await fetch(`${c.api}/me`)).status === 401, "auth: no token → 401");
+}
+
+async function upload(c: Ctx, u: User, body: Buffer, caption: string) {
+  const r = await fetch(`${c.api}/posts`, { method: "POST", headers: u.headers, body: JSON.stringify({ caption, contentType: "image/png" }) });
+  const { postId, uploadUrl } = await r.json();
+  const put = await fetch(uploadUrl, { method: "PUT", body: new Uint8Array(body), headers: { "content-type": "image/png" } });
+  if (!put.ok) throw new Error(`S3 PUT ${put.status}`);
+  return postId as string;
+}
+
+async function pipelineFlow(c: Ctx) {
+  const u = await newUser(c);
+  const t0 = Date.now();
+  const good = await waitForStatus(c, u, await upload(c, u, makePng(1600, 900), "smoke photo"));
+  ok(good.status === "READY" && good.thumbUrl && good.fullUrl, `pipeline: real PNG → READY in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  ok((await fetch(good.thumbUrl)).ok, "pipeline: thumb URL serves the resized image");
+  const grid = await fetch(`${c.api}/users/${u.userId}/posts`, { headers: u.headers }).then((r) => r.json());
+  ok(grid.items.length === 1 && grid.items[0].postId === good.postId, "pipeline: post appears in the profile grid");
+  const me = await fetch(`${c.api}/me`, { headers: u.headers }).then((r) => r.json());
+  ok(me.postCount === 1, "pipeline: postCount = 1");
+  const bad = await waitForStatus(c, u, await upload(c, u, Buffer.from("definitely not a png"), "fake"));
+  ok(bad.status === "FAILED", `pipeline: fake PNG → FAILED (${bad.failReason})`);
+  const grid2 = await fetch(`${c.api}/users/${u.userId}/posts`, { headers: u.headers }).then((r) => r.json());
+  ok(grid2.items.length === 1, "pipeline: FAILED post stays out of the grid");
+}
+
+async function uiFlow() {
+  if (!CHROME) return console.log("⚠️  ui: no Chrome/Edge found, skipped");
+  if (!(await fetch(WEB).then(() => true, () => false))) {
+    return console.log("⚠️  ui: web dev server not running (npm -w web run dev), skipped");
+  }
+  const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 800, height: 900 });
+    const login = `ui${randomUUID().slice(0, 6)}`;
+    await page.goto(`${WEB}/login`, { waitUntil: "networkidle0" });
+    await page.click("button.link");
+    await page.type('input[autocomplete="username"]', login);
+    await page.type('input[type="password"]', "password1");
+    await Promise.all([page.waitForNavigation({ timeout: 30000 }), page.click('button[type="submit"]')]);
+    ok(page.url().endsWith("/me"), "ui: create account lands on /me");
+    await page.waitForSelector("form.card h2", { timeout: 20000 });
+    ok((await page.$eval("form.card h2", (el) => el.textContent)) === "Choose a username", "ui: asks for a username");
+    await page.type("form.card input", login);
+    await page.click('form.card button[type="submit"]');
+    await page.waitForSelector(".profile h1", { timeout: 20000 });
+    ok((await page.$eval(".profile h1", (el) => el.textContent)) === `@${login}`, "ui: profile shows the username");
+    await page.screenshot({ path: img("02-profile.png") });
+
+    const file = join(mkdtempSync(join(tmpdir(), "ig-")), "photo.png");
+    writeFileSync(file, makePng(1200, 1200, [214, 120, 60]));
+    await page.goto(`${WEB}/new`, { waitUntil: "networkidle0" });
+    const input = await page.$('input[type="file"]');
+    await input!.uploadFile(file);
+    await page.type("textarea", "uploaded by the smoke test");
+    await Promise.all([page.waitForNavigation({ timeout: 90000 }), page.click('button[type="submit"]')]);
+    await page.waitForSelector(".grid .tile img", { timeout: 20000 });
+    await page.waitForFunction(() => {
+      const img = document.querySelector<HTMLImageElement>(".grid .tile img");
+      return img?.complete && img.naturalWidth > 0;
+    }, { timeout: 20000 });
+    ok(true, "ui: upload via /new → back on /me with the photo in the grid");
+    await page.screenshot({ path: img("03-grid.png") });
+  } finally {
+    await browser.close();
+  }
+}
+
+async function main() {
+  await assertFlociUp();
+  useLocalEnv();
+  const out = readOutputs("ig-local-core");
+  const c: Ctx = { api: localApiUrl(out.ApiUrl), clientId: out.UserPoolClientId };
+  const only = process.argv[2];
+  if (!only || only === "auth") await authFlow(c);
+  if (!only || only === "pipeline") await pipelineFlow(c);
+  if (!only || only === "ui") await uiFlow();
+}
+
+main().catch((e) => { console.error(String(e.message ?? e)); process.exit(1); });
