@@ -7,3 +7,4 @@ out/
 .superpowers/
 .env
 web/tsconfig.tsbuildinfo
+scripts/.photos/

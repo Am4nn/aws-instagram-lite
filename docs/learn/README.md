@@ -1,7 +1,7 @@
 # Study list
 
 Read in order. Each step: skim the doc, run the "Poke it" commands, then read the code it points to.
-Tick boxes as you go.
+Tick boxes as you go. Big picture first: [architecture.md](architecture.md) (every AWS resource, 4 diagrams).
 
 ## Step 1: Skeleton (IaC, Lambda, API Gateway, DynamoDB)
 - [ ] [01-skeleton.md](01-skeleton.md): what CDK is, how a request reaches a Lambda

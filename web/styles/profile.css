@@ -1,0 +1,242 @@
+/* Area: /me, /u, /new (profile, grid, upload). Owned by the profile page agent.
+   Unlayered: beats the primitives in globals.css. Use tokens from globals.css. */
+
+/* =====================================================================
+   Profile header (components/profile/ProfileHeader.tsx)
+   Flat DOM placed with grid areas, so desktop and phone can reorder freely.
+   ===================================================================== */
+.profile { margin: 0; }
+
+.profile-header {
+  display: grid;
+  grid-template-columns: min(30%, 290px) auto minmax(0, 1fr);
+  /* the 1fr rows absorb the avatar's extra height so the text block sits centred next to it */
+  grid-template-rows: 1fr auto auto auto 1fr;
+  grid-template-areas:
+    "avatar .      .     "
+    "avatar name   action"
+    "avatar counts counts"
+    "avatar bio    bio   "
+    "avatar .      .     ";
+  align-items: center;
+  margin: var(--s-4) 0 var(--s-10);
+  min-height: 150px;
+}
+.ph-avatar { grid-area: avatar; justify-self: center; align-self: center; padding-right: var(--s-6); display: flex; }
+.ph-avatar-skel { width: 150px; height: 150px; }
+
+.profile-header h1,
+.ph-name {
+  grid-area: name; margin: 0; min-width: 0;
+  font-size: var(--fs-xl); font-weight: 500; letter-spacing: -0.01em; line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ph-action { grid-area: action; justify-self: start; display: flex; gap: var(--s-2); margin-left: var(--s-5); }
+.ph-action > button, .ph-action > .btn { min-width: 108px; }
+
+.ph-counts {
+  grid-area: counts; display: flex; gap: var(--s-10);
+  list-style: none; margin: var(--s-5) 0 0; padding: 0;
+  font-size: var(--fs-md); color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.ph-counts li { white-space: nowrap; }
+.ph-counts b { font-weight: 600; }
+
+.ph-bio {
+  grid-area: bio; margin: var(--s-4) 0 0; max-width: 60ch;
+  font-size: var(--fs-sm); line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere;
+}
+
+.ph-error { margin: calc(-1 * var(--s-6)) 0 var(--s-4); text-align: center; }
+
+/* ---------- "Posts" tab ---------- */
+.profile-tabs {
+  display: flex; justify-content: center;
+  border-top: 1px solid var(--border);
+}
+.profile-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 52px; margin-top: -1px;
+  border-top: 1px solid var(--text);
+  font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text);
+}
+
+/* ---------- inline edit form (/me) ---------- */
+.edit-card {
+  /* lines up with the name/counts column of the header */
+  max-width: 480px; margin: calc(-1 * var(--s-4)) 0 var(--s-8) min(30%, 290px);
+  padding: var(--s-5);
+  box-shadow: var(--shadow-sm);
+}
+.edit-card h2 { margin: 0; font-size: var(--fs-md); }
+.label-row { display: flex; justify-content: space-between; align-items: baseline; }
+.counter { color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.counter.warn { color: var(--danger); }
+.edit-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--s-2); margin-top: var(--s-1); }
+.edit-actions .error { flex: 1; min-width: 0; }
+.edit-actions button { min-width: 76px; }
+.ph-action button[aria-expanded="true"] { background: var(--hover); }
+
+/* labels are muted/500; the controls inside them shouldn't inherit that */
+.edit-card input, .edit-card textarea, .onboard input, .upload textarea { font-weight: 400; }
+
+/* "@" adornment inside the username input */
+.at-field { position: relative; display: block; width: 100%; }
+.at-field > span[aria-hidden] {
+  position: absolute; left: var(--s-3); top: 50%; transform: translateY(-50%);
+  color: var(--muted); font-size: var(--fs-md); font-weight: 400; pointer-events: none;
+}
+.at-field input:not([type="file"]) { padding-left: 28px; }
+
+/* ---------- first run: choose a username ---------- */
+.onboard {
+  align-items: center; text-align: center;
+  margin: max(var(--s-6), 10vh) auto 0;
+  padding: var(--s-8) var(--s-6) var(--s-6);
+}
+.onboard-avatar { --h: 220; color: var(--muted); }
+.onboard h2 { margin: var(--s-2) 0 0; font-size: var(--fs-lg); }
+.onboard-hint { margin: calc(-1 * var(--s-2)) 0 var(--s-2); }
+.onboard .error { align-self: stretch; text-align: left; }
+.onboard button[type="submit"] { margin-top: calc(-1 * var(--s-1)); }
+
+/* spinners on filled / dark backgrounds */
+.spinner.on-accent {
+  border-color: color-mix(in srgb, var(--on-accent) 35%, transparent);
+  border-top-color: var(--on-accent);
+}
+.spinner.on-scrim {
+  border-color: color-mix(in srgb, var(--n-0) 35%, transparent);
+  border-top-color: var(--n-0);
+}
+
+/* =====================================================================
+   Grid (components/PostGrid.tsx)
+   ===================================================================== */
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 0; }
+.tile {
+  position: relative; display: block; aspect-ratio: 1; overflow: hidden;
+  background: var(--surface-2); border-radius: 0;
+}
+.tile.skeleton { border-radius: 0; }
+.tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tile:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: 0; }
+
+.tile-overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center; gap: var(--s-6);
+  background: color-mix(in srgb, var(--n-950) 38%, transparent);
+  color: var(--n-0); font-size: var(--fs-md); font-weight: 700; font-variant-numeric: tabular-nums;
+  opacity: 0; transition: opacity var(--dur) var(--ease);
+}
+.tile-overlay > span { display: inline-flex; align-items: center; gap: 6px; }
+.tile-overlay svg { width: 20px; height: 20px; }
+.tile:hover .tile-overlay, .tile:focus-visible .tile-overlay { opacity: 1; }
+.tile:hover { text-decoration: none; }
+@media (hover: none) { .tile-overlay { display: none; } }
+
+.tile-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-2);
+  color: var(--muted); font-size: var(--fs-xs); font-weight: 500;
+}
+
+.grid-empty { padding: var(--s-12) var(--s-4); }
+.grid-msg {
+  display: flex; flex-direction: column; align-items: center; gap: var(--s-2);
+  padding: var(--s-12) var(--s-4); text-align: center;
+}
+.grid-msg p { margin: 0; }
+
+/* =====================================================================
+   Upload (/new)
+   ===================================================================== */
+.upload { padding: 0 var(--s-5) var(--s-5); gap: var(--s-3); overflow: hidden; }
+.upload-title {
+  margin: 0 calc(-1 * var(--s-5)) var(--s-1);
+  padding: var(--s-3) var(--s-5);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-md); font-weight: 600; text-align: center;
+}
+
+.dropzone {
+  position: relative; display: grid; place-items: center; gap: 0;
+  width: 100%; aspect-ratio: 1; overflow: hidden;
+  border: 1.5px dashed var(--border-strong); border-radius: var(--r-md);
+  background: transparent; color: var(--text); cursor: pointer;
+  font-size: var(--fs-md); font-weight: 400;
+  transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.dropzone:hover { background: var(--hover); }
+.dropzone:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.dropzone.dragging { border-color: var(--accent-text); background: var(--accent-soft); }
+.dropzone.has-preview { border: 1px solid var(--border); background: var(--surface-2); }
+.dropzone.busy { cursor: progress; }
+
+.dropzone-empty { display: flex; flex-direction: column; align-items: center; gap: var(--s-3); color: var(--text); }
+.dropzone-empty svg { color: var(--muted); }
+.dropzone-title { font-size: var(--fs-lg); }
+.dropzone-empty .btn { margin-top: var(--s-1); pointer-events: none; }
+.dropzone:hover .btn.secondary { background: var(--surface); border-color: var(--n-400); }
+
+.preview { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+.dropzone-busy {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--n-950) 35%, transparent);
+}
+
+.upload-meta {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s-2);
+  height: 30px; margin-top: calc(-1 * var(--s-1));
+}
+.upload-meta button { flex: none; color: var(--accent-text); margin-right: calc(-1 * var(--s-2)); }
+.upload .error { margin: calc(-1 * var(--s-1)) 0; }
+.truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.caption-field { position: relative; display: block; }
+.caption-field textarea { padding-bottom: 26px; min-height: 96px; resize: none; }
+
+.touch-only { display: none; }
+@media (hover: none) { .drag-only { display: none; } .touch-only { display: inline; } }
+.caption-field .counter { position: absolute; right: var(--s-3); bottom: 8px; pointer-events: none; }
+
+/* =====================================================================
+   Phones: compact Instagram-mobile header, edge-to-edge grid
+   ===================================================================== */
+@media (max-width: 767px) {
+  .profile-header {
+    grid-template-columns: 84px minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto;
+    grid-template-areas:
+      "avatar name  "
+      "avatar counts"
+      "bio    bio   "
+      "action action";
+    column-gap: var(--s-5);
+    margin: 0 0 var(--s-5);
+    min-height: 0;
+  }
+  .ph-avatar { padding-right: 0; }
+  .ph-avatar-skel { width: 84px; height: 84px; }
+  .profile-header h1, .ph-name { align-self: end; font-size: var(--fs-lg); font-weight: 600; }
+  .ph-counts { align-self: start; gap: var(--s-6); margin-top: var(--s-2); }
+  .ph-counts li { display: flex; flex-direction: column; line-height: 1.25; font-size: var(--fs-sm); }
+  .ph-counts b { font-size: var(--fs-md); }
+  .ph-bio { margin-top: var(--s-3); }
+  .ph-action { justify-self: stretch; margin: var(--s-4) 0 0; }
+  .ph-action > button, .ph-action > .btn { flex: 1; height: 34px; }
+  .ph-error { margin: calc(-1 * var(--s-3)) 0 var(--s-3); }
+
+  .edit-card { margin: 0 0 var(--s-5); max-width: none; }
+
+  .profile-tabs, .profile .grid { margin-inline: calc(-1 * var(--s-4)); }
+  .profile-tab { height: 44px; }
+  .grid { gap: 3px; }
+
+  .onboard { margin-top: var(--s-6); }
+
+  .upload { padding: 0 var(--s-4) var(--s-4); }
+  .upload-title { margin-inline: calc(-1 * var(--s-4)); padding-inline: var(--s-4); }
+}

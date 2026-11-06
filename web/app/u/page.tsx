@@ -1,13 +1,27 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { UserX } from "lucide-react";
 import { Nav } from "../../components/Nav";
 import { api, ApiError, type Profile } from "../../lib/api";
 import { PostGrid } from "../../components/PostGrid";
+import { ProfileHeader, ProfileHeaderSkeleton, ProfileTabs } from "../../components/profile/ProfileHeader";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { mySub } from "../../lib/auth";
 
 type PublicProfile = Profile & { isFollowing: boolean };
+
+function Loading() {
+  return (
+    <section className="profile">
+      <ProfileHeaderSkeleton />
+      <ProfileTabs />
+      <div className="grid" aria-hidden>{Array.from({ length: 6 }, (_, i) => <span key={i} className="tile skeleton" />)}</div>
+    </section>
+  );
+}
 
 // Static export can't pre-render /u/<every username>, so the name is a query param: /u?name=ann
 function UserProfile() {
@@ -15,16 +29,30 @@ function UserProfile() {
   const [profile, setProfile] = useState<PublicProfile | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    setError("");
     api<PublicProfile>(`/users/${encodeURIComponent(name)}`)
       .then(setProfile)
       .catch((e) => (e instanceof ApiError && e.status === 404 ? setProfile(null) : setError("Couldn't load this profile.")));
-  }, [name]);
+  }, [name, attempt]);
 
-  if (error && profile === undefined) return <p className="error">{error}</p>;
-  if (profile === undefined) return <p className="muted">Loading…</p>;
-  if (profile === null) return <p>No user called @{name}.</p>;
+  if (error && profile === undefined) {
+    return (
+      <div className="grid-msg" role="alert">
+        <p className="error">{error}</p>
+        <button type="button" className="secondary sm" onClick={() => setAttempt((n) => n + 1)}>Retry</button>
+      </div>
+    );
+  }
+  if (profile === undefined) return <Loading />;
+  if (profile === null) {
+    return (
+      <EmptyState icon={UserX} title="User not found" hint={<>No one is called @{name}.</>}
+        action={<Link className="btn secondary" href="/feed">Back to feed</Link>} />
+    );
+  }
 
   async function toggleFollow() {
     if (!profile) return;
@@ -43,24 +71,21 @@ function UserProfile() {
     }
   }
   const isMe = profile.userId === mySub();
+  const action = isMe ? (
+    <Link className="btn secondary" href="/me">Edit profile</Link>
+  ) : (
+    <button type="button" className={`follow-btn ${profile.isFollowing ? "secondary" : ""}`} onClick={toggleFollow}
+      disabled={busy} aria-pressed={profile.isFollowing}
+      title={profile.isFollowing ? `Unfollow @${profile.username}` : undefined}>
+      {profile.isFollowing ? "Following" : "Follow"}
+    </button>
+  );
   return (
     <section className="profile">
-      <div className="profile-head">
-        <h1>@{profile.username}</h1>
-        {!isMe && (
-          <button className={profile.isFollowing ? "secondary" : ""} onClick={toggleFollow} disabled={busy}>
-            {profile.isFollowing ? "Following" : "Follow"}
-          </button>
-        )}
-      </div>
-      {error && <p className="error">{error}</p>}
-      <p>{profile.bio || <span className="muted">No bio yet.</span>}</p>
-      <p className="counts">
-        <span><b>{profile.postCount}</b> posts</span>
-        <span><b>{profile.followerCount}</b> followers</span>
-        <span><b>{profile.followingCount}</b> following</span>
-      </p>
-      <PostGrid userId={profile.userId} />
+      <ProfileHeader profile={profile} action={action} />
+      {error && <p className="error ph-error" role="alert">{error}</p>}
+      <ProfileTabs />
+      <PostGrid userId={profile.userId} username={profile.username} count={profile.postCount} isMe={isMe} />
     </section>
   );
 }
@@ -69,8 +94,8 @@ export default function UserPage() {
   return (
     <>
       <Nav />
-      <main>
-        <Suspense fallback={<p className="muted">Loading…</p>}>
+      <main className="wide">
+        <Suspense fallback={<Loading />}>
           <UserProfile />
         </Suspense>
       </main>

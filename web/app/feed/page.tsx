@@ -1,9 +1,11 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { AlertCircle, ArrowRight, Search, Users } from "lucide-react";
 import { Nav } from "../../components/Nav";
-import { LikeButton } from "../../components/LikeButton";
+import { FeedCard, FeedCardSkeleton } from "../../components/feed/FeedCard";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { Spinner } from "../../components/ui/Spinner";
 import { api, type FeedItem } from "../../lib/api";
 
 export default function Feed() {
@@ -12,6 +14,7 @@ export default function Feed() {
   const [loading, setLoading] = useState(false);
   const [find, setFind] = useState("");
   const [error, setError] = useState("");
+  const findRef = useRef<HTMLInputElement>(null);
 
   async function load(cursor?: string) {
     setLoading(true);
@@ -35,35 +38,56 @@ export default function Feed() {
     if (find.trim()) window.location.href = `/u?name=${encodeURIComponent(find.trim())}`;
   }
 
+  // Retry the request that failed: the next page if we already have posts, else the first page.
+  const retry = () => load(items && items.length > 0 ? next : undefined);
+
   return (
     <>
       <Nav />
-      <main>
-        <form className="find" onSubmit={go}>
-          <input placeholder="Find someone by username" value={find} onChange={(e) => setFind(e.target.value)} aria-label="Find a user" />
-          <button type="submit">Go</button>
+      <main className="feed">
+        <form className="find" onSubmit={go} role="search">
+          <Search className="find-icon" size={18} strokeWidth={1.8} aria-hidden />
+          <input
+            ref={findRef} type="search" placeholder="Find someone by username" value={find}
+            onChange={(e) => setFind(e.target.value)} aria-label="Find a user" autoComplete="off" spellCheck={false}
+          />
+          <button type="submit" className="icon-btn find-go" aria-label="Go to profile" title="Go to profile" hidden={!find.trim()}>
+            <ArrowRight size={18} strokeWidth={2} aria-hidden />
+          </button>
         </form>
-        {items === null && <p className="muted">Loading…</p>}
-        {error && <p className="error">{error} <button className="link" onClick={() => load()}>Try again</button></p>}
-        {items?.length === 0 && !error && !next && <p className="muted">Your feed is empty. Follow someone to see their posts here.</p>}
-        {items?.map((p) => (
-          <article key={p.postId} className="feed-card">
-            <Link href={`/u?name=${p.author.username}`} className="author">@{p.author.username}</Link>
-            <Link href={`/p?id=${p.postId}`}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={p.fullUrl} alt={p.caption || "photo"} loading="lazy" />
-            </Link>
-            <div className="actions">
-              <LikeButton postId={p.postId} liked={!!p.likedByMe} count={p.likeCount} />
-              <Link href={`/p?id=${p.postId}`} className="muted">💬 {p.commentCount}</Link>
-            </div>
-            {p.caption && <p>{p.caption}</p>}
-            <p className="muted small">{new Date(p.createdAt).toLocaleString()}</p>
-          </article>
-        ))}
-        {items?.length === 0 && next && !error && <p className="muted">Nothing new here yet…</p>}
-        {next && (
-          <button className="more" onClick={() => load(next)} disabled={loading}>{loading ? "Loading…" : "Load more"}</button>
+
+        {items === null && (
+          <div aria-busy="true" aria-label="Loading feed">
+            <FeedCardSkeleton />
+            <FeedCardSkeleton />
+          </div>
+        )}
+
+        {items?.length === 0 && !error && !next && (
+          <EmptyState
+            icon={Users}
+            title="Your feed is empty"
+            hint="Follow people to see their photos here."
+            action={<button type="button" className="secondary" onClick={() => findRef.current?.focus()}>Find people</button>}
+          />
+        )}
+
+        {items?.map((p) => <FeedCard key={p.postId} post={p} />)}
+
+        {items?.length === 0 && next && !error && <p className="muted feed-note">Nothing new here yet…</p>}
+
+        {error && (
+          <div className={`feed-error ${items && items.length > 0 ? "" : "first"}`.trim()} role="alert">
+            <AlertCircle size={18} strokeWidth={1.8} aria-hidden />
+            <span>{error}</span>
+            <button type="button" className="secondary sm" onClick={retry} disabled={loading}>Try again</button>
+          </div>
+        )}
+
+        {next && !error && (
+          <button type="button" className="secondary block more" onClick={() => load(next)} disabled={loading}>
+            {loading ? <Spinner size={16} label="Loading more posts" /> : "Load more"}
+          </button>
         )}
       </main>
     </>
