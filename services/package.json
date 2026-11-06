@@ -1,0 +1,7 @@
+{
+  "name": "@ig/services",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "vitest run" },
+  "devDependencies": { "@types/aws-lambda": "^8" }
+}

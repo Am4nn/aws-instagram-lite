@@ -6,5 +6,9 @@
     "test": "vitest run",
     "deploy-local": "tsx src/deploy-local.ts",
     "spike": "tsx src/spike-check.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudformation": "^3.1163.0",
+    "@aws-sdk/client-ssm": "^3.1163.0"
   }
 }
