@@ -15,8 +15,9 @@ services:
       # tokens as http://127.0.0.1:4566/<pool> (not http://localhost:...).
       FLOCI_BASE_URL: "http://127.0.0.1:4566"
       # Let the Next.js dev server call Floci directly (Cognito sign-in from the browser).
-      # WEB_ORIGIN (the local CloudFront URL) is written to .env by `npm run deploy:web`.
-      FLOCI_SECURITY_EXTRA_CORS_ALLOWED_ORIGINS: "http://localhost:3000,${WEB_ORIGIN:-http://localhost:3000}"
+      # WEB_ORIGIN (the local CloudFront URL) and WEB_ORIGIN_SHORT (same, as *.localhost, no DNS
+      # needed in Chrome/Edge) are written to .env by `npm run deploy:web`.
+      FLOCI_SECURITY_EXTRA_CORS_ALLOWED_ORIGINS: "http://localhost:3000,${WEB_ORIGIN:-http://localhost:3000},${WEB_ORIGIN_SHORT:-http://localhost:3000}"
       FLOCI_SECURITY_EXTRA_CORS_ALLOWED_HEADERS: "x-amz-target,x-amz-user-agent,amz-sdk-invocation-id,amz-sdk-request"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock # Lambda runs in sibling containers

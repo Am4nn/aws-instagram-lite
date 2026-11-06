@@ -41,7 +41,8 @@ async function main() {
 
   // 4 first: if the CORS origin changes, the container is recreated (state persists, see docker-compose.yml)
   const envFile = join(root, ".env");
-  const wanted = `WEB_ORIGIN=${url}\n`;
+  const short = url.replace(".localhost.floci.io", ".localhost"); // Chrome/Edge resolve *.localhost themselves
+  const wanted = `WEB_ORIGIN=${url}\nWEB_ORIGIN_SHORT=${short}\n`;
   if (!existsSync(envFile) || readFileSync(envFile, "utf8") !== wanted) {
     writeFileSync(envFile, wanted);
     console.log(`Allowing ${url} in Floci CORS (recreating the container)…`);
@@ -64,7 +65,7 @@ async function main() {
     DistributionId: out.DistributionId,
     InvalidationBatch: { CallerReference: String(Date.now()), Paths: { Quantity: 1, Items: ["/*"] } },
   }));
-  console.log(`\nUploaded ${plan.length} objects. Open: ${url}/login\n`);
+  console.log(`\nUploaded ${plan.length} objects. Open: ${url}/login\n  (or, no DNS needed: ${short}/login)\n`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
