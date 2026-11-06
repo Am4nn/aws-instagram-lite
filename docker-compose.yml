@@ -18,6 +18,10 @@ services:
       # WEB_ORIGIN (the local CloudFront URL) and WEB_ORIGIN_SHORT (same, as *.localhost, no DNS
       # needed in Chrome/Edge) are written to .env by `npm run deploy:web`.
       FLOCI_SECURITY_EXTRA_CORS_ALLOWED_ORIGINS: "http://localhost:3000,${WEB_ORIGIN:-http://localhost:3000},${WEB_ORIGIN_SHORT:-http://localhost:3000}"
+      # Label the Lambda/ECR containers Floci starts with this compose project, so Docker Desktop
+      # groups them under "instagram-lite" next to the floci container.
+      FLOCI_DOCKER_EXTRA_LABELS_0__KEY: "com.docker.compose.project"
+      FLOCI_DOCKER_EXTRA_LABELS_0__VALUE: "instagram-lite"
       FLOCI_SECURITY_EXTRA_CORS_ALLOWED_HEADERS: "x-amz-target,x-amz-user-agent,amz-sdk-invocation-id,amz-sdk-request"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock # Lambda runs in sibling containers
