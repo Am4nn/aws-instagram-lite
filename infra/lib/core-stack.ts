@@ -33,6 +33,8 @@ export class CoreStack extends Stack {
   readonly stageConfig: StageConfig;
   /** aws: `https://<CloudFront domain>`, the only browser origin allowed. local: undefined (= any). */
   readonly webOrigin?: string;
+  /** Every function made by addFunction, by short name (feeds the ops dashboard). */
+  readonly functions: Record<string, NodejsFunction> = {};
 
   constructor(scope: Construct, id: string, props: CoreStackProps) {
     super(scope, id, props);
@@ -133,6 +135,7 @@ export class CoreStack extends Stack {
     // ---------- Ops: alarms + ops topic (step 6) ----------
     addOps(this, {
       dlqs: { uploads: pipeline.dlq, fanout: social.fanoutDlq, notify: engage.notifyDlq, cdc: engage.cdcDlq },
+      queues: { uploads: pipeline.queue, fanout: social.fanoutQueue, notify: engage.notifyQueue },
       pipeline: pipeline.machine,
       api: this.api,
     });
@@ -166,6 +169,7 @@ export class CoreStack extends Stack {
       bundling: { minify: true },
     });
     if (opts.tableAccess !== false) this.table.grantReadWriteData(fn);
+    this.functions[name] = fn;
     return fn;
   }
 

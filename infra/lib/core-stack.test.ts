@@ -242,6 +242,10 @@ describe("CoreStack", () => {
       t.hasResourceProperties("AWS::CloudWatch::Alarm", { AlarmName: "ig-local-api-5xx", MetricName: "5xx", Threshold: 5 });
     });
 
+    it("has no dashboard locally (real AWS only)", () => {
+      t.resourceCountIs("AWS::CloudWatch::Dashboard", 0);
+    });
+
     it("has a local-only inbox queue subscribed to the ops topic", () => {
       t.hasResourceProperties("AWS::SQS::Queue", { QueueName: "ig-local-ops-inbox" });
       t.hasResourceProperties("AWS::SNS::Subscription", { Protocol: "sqs", RawMessageDelivery: true });
@@ -289,6 +293,18 @@ describe("CoreStack on aws (stage=aws, ap-southeast-2)", () => {
       LambdaConfig: Match.absent(),
     });
     expect(Object.values(t.findResources("AWS::Lambda::Function", { Properties: { FunctionName: "ig-aws-presignup" } }))).toEqual([]);
+  });
+
+  it("has one ops dashboard: alarms, API, every Lambda, queues and the pipeline", () => {
+    t.resourceCountIs("AWS::CloudWatch::Dashboard", 1);
+    t.hasResourceProperties("AWS::CloudWatch::Dashboard", { DashboardName: "ig-aws-ops" });
+    const body = JSON.stringify(Object.values(t.findResources("AWS::CloudWatch::Dashboard"))[0]);
+    for (const ns of ["AWS/ApiGateway", "AWS/Lambda", "AWS/SQS", "AWS/States"]) expect(body).toContain(ns);
+    expect(body).toContain("alarm"); // alarm status widget
+    // one Errors line per function (15 on aws: no presignup)
+    const fnIds = Object.keys(t.findResources("AWS::Lambda::Function", { Properties: { FunctionName: Match.stringLikeRegexp("^ig-aws-") } }));
+    expect(fnIds).toHaveLength(15);
+    for (const id of fnIds) expect(body).toContain(`"Ref":"${id}"`);
   });
 
   it("trusts tokens from Cognito in ap-southeast-2", () => {
