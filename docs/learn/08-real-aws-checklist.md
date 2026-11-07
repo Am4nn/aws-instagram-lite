@@ -1,20 +1,22 @@
 # Step 8: putting it on real AWS
 
 Everything so far runs on Floci. Step 8 deploys the **same CDK code** with `-c stage=aws`
-to **ap-south-1 (Mumbai)**. Stack: `ig-aws-core`. The code is ready; these are the steps.
+to **ap-southeast-2 (Sydney)**. Stack: `ig-aws-core`. The code is ready; these are the steps.
 
-## 1. Create the account (you, ~15 min)
-- [ ] Sign up at aws.amazon.com (needs a card; the free tier covers this project)
-- [ ] **Root user: turn on MFA** right away, then stop using root
-- [ ] **Budgets → Monthly cost budget template, $5**, email alerts at 85% / 100% ← first thing
-- [ ] **IAM → Users → create `aman`** with console access + `AdministratorAccess` + MFA, then sign in as it.
-  Not IAM Identity Center: on a Free plan account it creates an AWS Organization, which permanently moves you to the Paid plan.
+## 1. Create the account (you, ~10 min)
+This account uses AWS's **new sign-up experience** (Sept 2026: "projects", Free plan with credits). It differs from
+most tutorials:
+- [ ] Sign up at aws.amazon.com. The Free plan never charges you until you upgrade, so no budget alert is needed.
+- [ ] **MFA:** settings.aws.com → Manage security and sign-in → Security → Register device (register two).
+  There is **no root user** (your AWS Builder ID owns the account) and IAM users can't use the console, so skip both.
+- [ ] **Region:** fixed per project, picked from your country (India → Sydney `ap-southeast-2`). Mumbai isn't offered.
+- [ ] **Don't "Activate advanced features"**: it's irreversible and ends the Free plan. Everything we use works without it.
 - [ ] Install nothing new: AWS CLI v2 and CDK are already installed
 
 ## 2. Log in from the terminal (you)
 ```powershell
-aws login --profile ig --region ap-south-1   # browser sign-in as aman; short-lived creds, no access keys (CLI ≥ 2.32)
-aws sts get-caller-identity --profile ig    # check: ...:user/aman
+aws login --profile ig --region ap-southeast-2   # browser: pick your project + session (CLI ≥ 2.32)
+aws sts get-caller-identity --profile ig    # check: prints your project's account id
 ```
 
 ## 3. Deploy

@@ -1,5 +1,5 @@
 /**
- * npm run deploy:aws: deploy to REAL AWS (stage aws, ap-south-1) with your `ig` profile.
+ * npm run deploy:aws: deploy to REAL AWS (stage aws, ap-southeast-2) with your `ig` profile.
  *   0. (--bootstrap, once per account/region) cdk bootstrap
  *   1. cdk deploy ig-aws-core -c stage=aws → infra/cdk.out/outputs-aws.json
  *   2. next build with the real API URL, user pool client id and region (passed as env:
@@ -24,7 +24,7 @@ async function main() {
   console.log(`Real AWS: profile ${env.AWS_PROFILE}, region ${AWS_STAGE_REGION}, stack ${AWS_STACK}`);
   console.log(`(not logged in? run: aws login --profile ${env.AWS_PROFILE})\n`);
 
-  // Bootstraps the environment the app's stack targets: your profile's account + ap-south-1.
+  // Bootstraps the environment the app's stack targets: your profile's account + ap-southeast-2.
   if (flags.bootstrap) cdk(["bootstrap", "-c", "stage=aws"], env);
   cdk(cdkDeployArgs(flags), env);
 

@@ -41,9 +41,9 @@ describe("assertFlociUp", () => {
 });
 
 describe("awsEnv (real AWS, stage aws)", () => {
-  it("uses the ig profile by default and pins ap-south-1", () => {
+  it("uses the ig profile by default and pins ap-southeast-2", () => {
     const env = awsEnv({ PATH: "/bin" });
-    expect(env).toMatchObject({ PATH: "/bin", AWS_PROFILE: "ig", AWS_REGION: "ap-south-1", AWS_DEFAULT_REGION: "ap-south-1" });
+    expect(env).toMatchObject({ PATH: "/bin", AWS_PROFILE: "ig", AWS_REGION: "ap-southeast-2", AWS_DEFAULT_REGION: "ap-southeast-2" });
     expect(awsEnv({ AWS_PROFILE: "work" }).AWS_PROFILE).toBe("work");
   });
 

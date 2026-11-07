@@ -7,7 +7,7 @@ export interface StageConfig {
   /** Followers at or above this count make an author a "celeb" (fan-out on read). */
   celebThreshold: number;
   isLocal: boolean;
-  /** Where the stack lives: Floci's us-east-1 locally, Mumbai (ap-south-1) on real AWS. */
+  /** Where the stack lives: Floci's us-east-1 locally, Sydney (ap-southeast-2) on real AWS. */
   region: string;
   /** aws only, optional: email subscribed to the ops alarm topic (-c alertEmail=... or IG_ALERT_EMAIL). */
   alertEmail?: string;
@@ -49,7 +49,7 @@ export function loadConfig(
       throw new Error(`alertEmail "${alertEmail}" is not an email address.`);
     }
     return {
-      stage, prefix: "ig-aws", celebThreshold: 10000, isLocal: false, region: "ap-south-1",
+      stage, prefix: "ig-aws", celebThreshold: 10000, isLocal: false, region: "ap-southeast-2",
       ...(alertEmail ? { alertEmail } : {}),
     };
   }

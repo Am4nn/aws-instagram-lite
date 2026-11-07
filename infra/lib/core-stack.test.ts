@@ -278,7 +278,7 @@ describe("CoreStack", () => {
   });
 });
 
-describe("CoreStack on aws (stage=aws, ap-south-1)", () => {
+describe("CoreStack on aws (stage=aws, ap-southeast-2)", () => {
   const t = synthAws();
 
   it("requires a verified email at sign-up: no auto-confirm trigger", () => {
@@ -291,10 +291,10 @@ describe("CoreStack on aws (stage=aws, ap-south-1)", () => {
     expect(Object.values(t.findResources("AWS::Lambda::Function", { Properties: { FunctionName: "ig-aws-presignup" } }))).toEqual([]);
   });
 
-  it("trusts tokens from Cognito in ap-south-1", () => {
+  it("trusts tokens from Cognito in ap-southeast-2", () => {
     t.hasResourceProperties("AWS::ApiGatewayV2::Authorizer", {
       JwtConfiguration: {
-        Issuer: Match.objectLike({ "Fn::Join": ["", Match.arrayWith(["https://cognito-idp.ap-south-1.amazonaws.com/"])] }),
+        Issuer: Match.objectLike({ "Fn::Join": ["", Match.arrayWith(["https://cognito-idp.ap-southeast-2.amazonaws.com/"])] }),
       },
     });
   });

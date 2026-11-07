@@ -15,9 +15,9 @@ describe("loadConfig", () => {
     expect(loadConfig("local", { AWS_ENDPOINT_URL: "http://localhost.floci.io:4566" }).isLocal).toBe(true);
   });
 
-  it("builds the aws stage in ap-south-1 with no endpoint override", () => {
+  it("builds the aws stage in ap-southeast-2 with no endpoint override", () => {
     expect(loadConfig("aws", {})).toEqual({
-      stage: "aws", prefix: "ig-aws", celebThreshold: 10000, isLocal: false, region: "ap-south-1",
+      stage: "aws", prefix: "ig-aws", celebThreshold: 10000, isLocal: false, region: "ap-southeast-2",
     });
   });
 

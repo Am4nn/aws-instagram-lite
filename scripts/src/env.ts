@@ -39,11 +39,11 @@ export async function assertFlociUp(
   }
 }
 
-export const AWS_STAGE_REGION = "ap-south-1";
+export const AWS_STAGE_REGION = "ap-southeast-2";
 
 /**
  * Env for real AWS (stage aws): never an emulator endpoint or Floci's fake keys, a named profile
- * (default `ig`, from `aws login --profile ig`) and the Mumbai region.
+ * (default `ig`, from `aws login --profile ig`) and the Sydney region (the new AWS experience fixes the project Region).
  */
 export function awsEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   if (base.AWS_ENDPOINT_URL) {

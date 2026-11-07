@@ -40,7 +40,7 @@ export function addWeb(stack: CoreStack) {
       // Floci: S3 answers 403 (not 404) for missing keys when the caller can't list the bucket
       ? [notFound, { ...notFound, httpStatus: 403 }]
       : [notFound],
-    // local: cheapest edge set (NA + EU). aws: PRICE_CLASS_200 adds Asia incl. India (stack is in ap-south-1).
+    // local: cheapest edge set (NA + EU). aws: PRICE_CLASS_200 adds Asia incl. India, where the users are (the stack itself is in Sydney).
     priceClass: isLocal ? cloudfront.PriceClass.PRICE_CLASS_100 : cloudfront.PriceClass.PRICE_CLASS_200,
   });
 
