@@ -2,16 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ComponentType } from "react";
+import type { ComponentType } from "react";
 import { Aperture, Bell, CircleUser, House, LogOut, SquarePlus } from "lucide-react";
-import { signOut } from "../lib/auth";
-import { api } from "../lib/api";
+import { signOut } from "../lib/api";
 import { ThemeToggle } from "./ui/ThemeToggle";
 
 type Icon = ComponentType<{ size?: number; strokeWidth?: number }>;
 
-function logOut() {
-  signOut();
+async function logOut() {
+  await signOut(); // expires the httpOnly cookies (JS can't touch them itself)
   window.location.href = "/login";
 }
 
@@ -42,18 +41,13 @@ function Item({ path, href, icon: I, label, aria, className = "", badge = 0 }: {
 }
 
 /**
- * App shell. Render it before <main>: `<Nav />` (fetches the unread count) or `<Nav unread={0} />`.
+ * App shell. Render it before <main>, via the server component <AppNav /> (it reads the unread count
+ * on the server), or `<Nav unread={0} />` on the activity page.
  * >=768px: fixed icon rail on the left (labels from 1200px). <768px: slim top header + bottom tab bar.
  * globals.css (`body:has(.app-nav)`) pads the page so content never sits under the bars.
  */
-export function Nav({ unread: forced }: { unread?: number } = {}) {
-  const [unread, setUnread] = useState(forced ?? 0);
+export function Nav({ unread = 0 }: { unread?: number }) {
   const path = usePathname();
-
-  useEffect(() => {
-    if (forced !== undefined) return setUnread(forced);
-    api<{ unread: number }>("/notifications").then((r) => setUnread(r.unread)).catch(() => {});
-  }, [forced]);
 
   const activityLabel = unread > 0 ? `Activity (${unread} unread)` : "Activity";
 

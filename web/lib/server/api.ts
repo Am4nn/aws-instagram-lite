@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { ID_COOKIE } from "./cookies";
 import { serverEnv } from "./env";
 import { jwtClaims } from "./jwt";
@@ -54,5 +54,15 @@ export async function serverApiOrNull<T>(path: string): Promise<T | null> {
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) return null;
     throw e;
+  }
+}
+
+/** The value, or undefined if the call failed (the page then shows its "couldn't load" state). Redirects still happen. */
+export async function attempt<T>(p: Promise<T>): Promise<T | undefined> {
+  try {
+    return await p;
+  } catch (e) {
+    unstable_rethrow(e);
+    return undefined;
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { ID_COOKIE } from "./lib/server/cookies";
 import { serverEnv } from "./lib/server/env";
+import { siteOrigins } from "./lib/server/csrf";
 import { gate } from "./lib/server/gate";
 
 /**
@@ -19,7 +20,8 @@ export function proxy(req: NextRequest) {
     case "error":
       return NextResponse.json({ error: r.error }, { status: r.status });
     case "redirect":
-      return new NextResponse(null, { status: 307, headers: { location: r.location, "cache-control": "no-store" } });
+      // Next needs an absolute URL here: build it from the host the browser used (x-forwarded-host behind CloudFront).
+      return NextResponse.redirect(new URL(r.location, siteOrigins(req.headers, [])[0] ?? req.url), 307);
     default:
       return NextResponse.next();
   }

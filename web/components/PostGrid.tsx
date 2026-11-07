@@ -12,10 +12,13 @@ const fmt = (n: number) => new Intl.NumberFormat("en", { notation: n >= 10000 ? 
 /**
  * 3-column grid of a user's posts (thumbs). `count` (the profile's postCount) sizes the skeleton
  * so the page doesn't jump when posts arrive; `isMe` adds the "share your first photo" action.
+ * `initial`: posts the server already loaded (in the HTML); undefined = load them in the browser.
  */
-export function PostGrid({ userId, username, count, isMe = false }: { userId: string; username?: string; count?: number; isMe?: boolean }) {
-  const [posts, setPosts] = useState<Post[] | null>(null);
-  const [failed, setFailed] = useState(false);
+export function PostGrid({ userId, username, count, isMe = false, initial }: {
+  userId: string; username?: string; count?: number; isMe?: boolean; initial?: Post[] | null;
+}) {
+  const [posts, setPosts] = useState<Post[] | null>(initial ?? null);
+  const [failed, setFailed] = useState(initial === null);
 
   const load = useCallback(() => {
     setFailed(false);
@@ -25,7 +28,9 @@ export function PostGrid({ userId, username, count, isMe = false }: { userId: st
       .catch(() => setFailed(true));
   }, [userId]);
 
-  useEffect(load, [load]);
+  useEffect(() => {
+    if (initial === undefined) load();
+  }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (failed) {
     return (
@@ -58,7 +63,7 @@ export function PostGrid({ userId, username, count, isMe = false }: { userId: st
     <div className="grid">
       {posts.map((p) =>
         p.status === "READY" && p.thumbUrl ? (
-          <Link key={p.postId} href={`/p?id=${p.postId}${username ? `&u=${encodeURIComponent(username)}` : ""}`} className="tile"
+          <Link key={p.postId} href={`/p/${p.postId}${username ? `?u=${encodeURIComponent(username)}` : ""}`} className="tile"
             aria-label={`${p.caption || "Photo"} · ${p.likeCount} likes, ${p.commentCount} comments`}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={p.thumbUrl} alt={p.caption || "photo"} loading="lazy" />
