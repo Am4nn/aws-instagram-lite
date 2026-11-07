@@ -11,6 +11,9 @@ export interface StageConfig {
   region: string;
   /** aws only, optional: email subscribed to the ops alarm topic (-c alertEmail=... or IG_ALERT_EMAIL). */
   alertEmail?: string;
+  /** aws only, optional: custom domain for the site (e.g. lite.amanarya.com), with its ACM cert (must be us-east-1 for CloudFront). */
+  domainName?: string;
+  certificateArn?: string;
   /** Local only: Floci issues tokens as `${cognitoIssuerBase}/${userPoolId}`. On AWS the issuer comes from the stack region. */
   cognitoIssuerBase?: string;
 }
@@ -27,7 +30,7 @@ function isFlociEndpoint(url: string | undefined): boolean {
 
 /** Safety guard: local must hit Floci, aws must not have an endpoint override. */
 export function loadConfig(
-  stage: string | undefined, env: NodeJS.ProcessEnv, context: { alertEmail?: string } = {},
+  stage: string | undefined, env: NodeJS.ProcessEnv, context: { alertEmail?: string; domainName?: string; certificateArn?: string } = {},
 ): StageConfig {
   if (stage === "local") {
     if (!isFlociEndpoint(env.AWS_ENDPOINT_URL)) {
@@ -48,9 +51,15 @@ export function loadConfig(
     if (alertEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(alertEmail)) {
       throw new Error(`alertEmail "${alertEmail}" is not an email address.`);
     }
+    const { domainName, certificateArn } = context;
+    if (domainName && !certificateArn) throw new Error(`domainName "${domainName}" needs a certificateArn (ACM, us-east-1).`);
+    if (certificateArn && !certificateArn.startsWith("arn:aws:acm:us-east-1:")) {
+      throw new Error("certificateArn must be an ACM certificate in us-east-1 (CloudFront only reads certificates there).");
+    }
     return {
       stage, prefix: "ig-aws", celebThreshold: 10000, isLocal: false, region: "ap-southeast-2",
       ...(alertEmail ? { alertEmail } : {}),
+      ...(domainName && certificateArn ? { domainName, certificateArn } : {}),
     };
   }
   throw new Error(`stage must be local or aws (got "${stage}"). Pass -c stage=local`);

@@ -27,6 +27,15 @@ describe("loadConfig", () => {
     expect(() => loadConfig("aws", {}, { alertEmail: "not-an-email" })).toThrow(/alertEmail/);
   });
 
+  it("takes an optional custom domain on aws, with its us-east-1 certificate", () => {
+    const cert = "arn:aws:acm:us-east-1:123456789012:certificate/abc";
+    expect(loadConfig("aws", {}, { domainName: "lite.amanarya.com", certificateArn: cert }))
+      .toMatchObject({ domainName: "lite.amanarya.com", certificateArn: cert });
+    expect(() => loadConfig("aws", {}, { domainName: "lite.amanarya.com" })).toThrow(/certificateArn/);
+    expect(() => loadConfig("aws", {}, { domainName: "lite.amanarya.com", certificateArn: cert.replace("us-east-1", "ap-southeast-2") }))
+      .toThrow(/us-east-1/);
+  });
+
   it("refuses local without a Floci endpoint (would hit real AWS)", () => {
     expect(() => loadConfig("local", {})).toThrow(/AWS_ENDPOINT_URL must point at Floci/);
     expect(() => loadConfig("local", { AWS_ENDPOINT_URL: "https://s3.amazonaws.com" }))
