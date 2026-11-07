@@ -12,7 +12,7 @@ function synth() {
   return Template.fromStack(stack);
 }
 
-function synthAws(context: { alertEmail?: string } = {}) {
+function synthAws(context: { alertEmail?: string; domainName?: string; certificateArn?: string } = {}) {
   const app = new App({ context: { "aws:cdk:bundling-stacks": [] } });
   const config = loadConfig("aws", {}, context);
   const stack = new CoreStack(app, "ig-aws-core", { config, env: { account: "123456789012", region: config.region } });
@@ -293,6 +293,22 @@ describe("CoreStack on aws (stage=aws, ap-southeast-2)", () => {
       LambdaConfig: Match.absent(),
     });
     expect(Object.values(t.findResources("AWS::Lambda::Function", { Properties: { FunctionName: "ig-aws-presignup" } }))).toEqual([]);
+  });
+
+  it("serves a custom domain when configured: CloudFront alias + cert, and CORS allows it", () => {
+    const cert = "arn:aws:acm:us-east-1:123456789012:certificate/abc";
+    const d = synthAws({ domainName: "lite.amanarya.com", certificateArn: cert });
+    d.hasResourceProperties("AWS::CloudFront::Distribution", {
+      DistributionConfig: Match.objectLike({
+        Aliases: ["lite.amanarya.com"],
+        ViewerCertificate: Match.objectLike({ AcmCertificateArn: cert, SslSupportMethod: "sni-only" }),
+      }),
+    });
+    const both = [cdnOrigin, "https://lite.amanarya.com"];
+    d.hasResourceProperties("AWS::ApiGatewayV2::Api", { CorsConfiguration: Match.objectLike({ AllowOrigins: both }) });
+    d.hasResourceProperties("AWS::S3::Bucket", {
+      CorsConfiguration: { CorsRules: [Match.objectLike({ AllowedMethods: ["PUT"], AllowedOrigins: both })] },
+    });
   });
 
   it("has one ops dashboard: alarms, API, every Lambda, queues and the pipeline", () => {

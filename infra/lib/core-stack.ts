@@ -31,8 +31,8 @@ export class CoreStack extends Stack {
   readonly userPool: cognito.UserPool;
   readonly authorizer: HttpJwtAuthorizer;
   readonly stageConfig: StageConfig;
-  /** aws: `https://<CloudFront domain>`, the only browser origin allowed. local: undefined (= any). */
-  readonly webOrigin?: string;
+  /** aws: `https://<CloudFront domain>` (+ the custom domain), the only browser origins allowed. local: undefined (= any). */
+  readonly webOrigins?: string[];
   /** Every function made by addFunction, by short name (feeds the ops dashboard). */
   readonly functions: Record<string, NodejsFunction> = {};
 
@@ -93,14 +93,15 @@ export class CoreStack extends Stack {
     // Created before the API: on aws the API's CORS names the distribution's domain
     // (API → CloudFront dependency only; CloudFront doesn't depend on the API, so no cycle).
     const web = addWeb(this);
-    this.webOrigin = isLocal ? undefined : `https://${web.distribution.distributionDomainName}`;
+    const custom = props.config.domainName ? [`https://${props.config.domainName}`] : [];
+    this.webOrigins = isLocal ? undefined : [`https://${web.distribution.distributionDomainName}`, ...custom];
 
     // ---------- API ----------
     // HTTP API CORS overrides the CORS headers the Lambdas send (lib/http.ts says "*").
     this.api = new apigwv2.HttpApi(this, "Api", {
       apiName: `${prefix}-api`,
       corsPreflight: {
-        allowOrigins: [this.webOrigin ?? "*"],
+        allowOrigins: this.webOrigins ?? ["*"],
         allowMethods: [
           apigwv2.CorsHttpMethod.GET, apigwv2.CorsHttpMethod.POST,
           apigwv2.CorsHttpMethod.PUT, apigwv2.CorsHttpMethod.DELETE,

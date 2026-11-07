@@ -2,6 +2,7 @@ import { Annotations, CfnOutput, Duration, RemovalPolicy } from "aws-cdk-lib";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import type { CoreStack } from "./core-stack.js";
 
 /**
@@ -12,7 +13,7 @@ import type { CoreStack } from "./core-stack.js";
  * `cdk destroy` can't delete a non-empty bucket: `npm run destroy:aws` empties the ig-aws buckets first.
  */
 export function addWeb(stack: CoreStack) {
-  const { prefix, isLocal } = stack.stageConfig;
+  const { prefix, isLocal, domainName, certificateArn } = stack.stageConfig;
   const bucket = new s3.Bucket(stack, "Web", {
     bucketName: `${prefix}-web-${stack.account}`,
     blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -23,6 +24,11 @@ export function addWeb(stack: CoreStack) {
   const notFound = { httpStatus: 404, responseHttpStatus: 404, responsePagePath: "/404.html", ttl: Duration.minutes(1) };
   const distribution = new cloudfront.Distribution(stack, "Cdn", {
     comment: `${prefix} web`,
+    // aws, optional: custom domain. The cert was requested once by CLI in us-east-1 (this stack can't deploy there).
+    ...(domainName && certificateArn ? {
+      domainNames: [domainName],
+      certificate: acm.Certificate.fromCertificateArn(stack, "SiteCert", certificateArn),
+    } : {}),
     defaultRootObject: "index.html",
     defaultBehavior: {
       // aws: OAC may also LIST the bucket, so S3 answers a missing key with 404 (not 403). A 403 then
