@@ -3,19 +3,24 @@ import { App } from "aws-cdk-lib";
 import { Template, Match } from "aws-cdk-lib/assertions";
 import { CoreStack } from "./core-stack.js";
 import { loadConfig } from "./config.js";
+import { WEB_PLACEHOLDER } from "./web.js";
 
 function synth() {
   // Skip esbuild bundling in unit tests; the deploy exercises real bundling.
   const app = new App({ context: { "aws:cdk:bundling-stacks": [] } });
   const config = loadConfig("local", { AWS_ENDPOINT_URL: "http://localhost:4566" });
-  const stack = new CoreStack(app, "ig-local-core", { config, env: { account: "000000000000", region: "us-east-1" } });
+  const stack = new CoreStack(app, "ig-local-core", {
+    config, env: { account: "000000000000", region: "us-east-1" }, webServerBundle: WEB_PLACEHOLDER,
+  });
   return Template.fromStack(stack);
 }
 
 function synthAws(context: { alertEmail?: string; domainName?: string; certificateArn?: string } = {}) {
   const app = new App({ context: { "aws:cdk:bundling-stacks": [] } });
   const config = loadConfig("aws", {}, context);
-  const stack = new CoreStack(app, "ig-aws-core", { config, env: { account: "123456789012", region: config.region } });
+  const stack = new CoreStack(app, "ig-aws-core", {
+    config, env: { account: "123456789012", region: config.region }, webServerBundle: WEB_PLACEHOLDER,
+  });
   return Template.fromStack(stack);
 }
 
@@ -59,8 +64,8 @@ describe("CoreStack", () => {
     t.resourceCountIs("AWS::ApiGatewayV2::Api", 1);
   });
 
-  it("allows any browser origin locally (dev server, CloudFront on Floci)", () => {
-    t.hasResourceProperties("AWS::ApiGatewayV2::Api", { CorsConfiguration: Match.objectLike({ AllowOrigins: ["*"] }) });
+  it("API has no CORS (only the Next.js server calls it); browser uploads allow any origin locally", () => {
+    t.hasResourceProperties("AWS::ApiGatewayV2::Api", { CorsConfiguration: Match.absent() });
     t.hasResourceProperties("AWS::S3::Bucket", {
       BucketName: "ig-local-uploads-000000000000",
       CorsConfiguration: { CorsRules: [Match.objectLike({ AllowedOrigins: ["*"] })] },
@@ -259,20 +264,78 @@ describe("CoreStack", () => {
     });
   });
 
-  describe("web hosting (S3 + CloudFront)", () => {
-    it("private web bucket served only through CloudFront with Origin Access Control", () => {
+  describe("web hosting (SSR Lambda + S3 + CloudFront)", () => {
+    const dist = () => (Object.values(t.findResources("AWS::CloudFront::Distribution"))[0] as any).Properties.DistributionConfig;
+    const originOf = (behaviour: { TargetOriginId: string }) => dist().Origins.find((o: any) => o.Id === behaviour.TargetOriginId);
+
+    it("server Lambda: Node 22, 1024 MB, public Function URL (authType NONE), its own log group", () => {
+      t.hasResourceProperties("AWS::Lambda::Function", {
+        FunctionName: "ig-local-web-server", Runtime: "nodejs22.x", MemorySize: 1024, Handler: "index.handler",
+        Environment: { Variables: Match.objectLike({
+          STAGE: "local", SECURE_COOKIES: "false", SIGNUP_EMAIL: "", ORIGIN_VERIFY_SECRET: Match.anyValue(),
+          API_URL: Match.objectLike({ "Fn::Join": ["", Match.arrayWith(["http://", ".execute-api.localhost.floci.io:4566"])] }),
+          USER_POOL_CLIENT_ID: Match.anyValue(), COGNITO_REGION: "us-east-1",
+        }) },
+      });
+      t.hasResourceProperties("AWS::Lambda::Url", { AuthType: "NONE" });
+      t.hasResourceProperties("AWS::Logs::LogGroup", { LogGroupName: "/ig/ig-local/web-server", RetentionInDays: 14 });
+    });
+
+    it("three behaviours: /_next/static/* to the web bucket, /media/* to the media bucket, the rest to the server", () => {
+      const d = dist();
+      const byPath = Object.fromEntries(d.CacheBehaviors.map((b: any) => [b.PathPattern, b]));
+      expect(Object.keys(byPath).sort()).toEqual(["/_next/static/*", "/media/*"]);
+      expect(JSON.stringify(originOf(byPath["/_next/static/*"]).DomainName)).toMatch(/Web/);
+      expect(JSON.stringify(originOf(byPath["/media/*"]).DomainName)).toMatch(/Media/);
+      for (const b of Object.values(byPath) as any[]) {
+        expect(b.CachePolicyId).toBe("658327ea-f89d-4fab-a63d-7e88639e58f6"); // CachingOptimized
+        expect(originOf(b).OriginAccessControlId).toBeDefined();
+      }
+      expect(d.DefaultCacheBehavior).toMatchObject({
+        CachePolicyId: "4135ea2d-6df8-44a3-9df3-4b5a84be39ad", // CachingDisabled: pages are personal
+        OriginRequestPolicyId: "b689b0a8-53d0-40ab-baf2-68738e2966ac", // AllViewerExceptHostHeader: cookies + query
+        AllowedMethods: ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"],
+        ViewerProtocolPolicy: "redirect-to-https",
+      });
+      expect(d.DefaultCacheBehavior.FunctionAssociations[0].EventType).toBe("viewer-request");
+      t.resourceCountIs("AWS::CloudFront::OriginAccessControl", 2);
+      expect(d.DefaultRootObject).toBeUndefined();
+      expect(d.CustomErrorResponses).toBeUndefined();
+    });
+
+    it("the server origin gets the secret x-origin-verify header (same value as the Lambda env)", () => {
+      const server = originOf(dist().DefaultCacheBehavior);
+      const header = server.OriginCustomHeaders.find((h: any) => h.HeaderName === "x-origin-verify");
+      const fn = Object.values(t.findResources("AWS::Lambda::Function", { Properties: { FunctionName: "ig-local-web-server" } }))[0] as any;
+      expect(header.HeaderValue).toEqual(fn.Properties.Environment.Variables.ORIGIN_VERIFY_SECRET);
+      expect(JSON.stringify(header.HeaderValue)).toContain("AWS::StackId");
+    });
+
+    it("Floci: the server origin is the Function URL host on localhost.floci.io, plain http on 4566", () => {
+      const server = originOf(dist().DefaultCacheBehavior);
+      expect(JSON.stringify(server.DomainName)).toContain(".lambda-url.us-east-1.localhost.floci.io");
+      expect(server.CustomOriginConfig).toMatchObject({ OriginProtocolPolicy: "http-only", HTTPPort: 4566 });
+    });
+
+    it("a CloudFront Function copies the viewer Host into x-forwarded-host", () => {
+      t.hasResourceProperties("AWS::CloudFront::Function", { FunctionCode: Match.stringLikeRegexp("x-forwarded-host") });
+    });
+
+    it("private buckets; the media bucket only readable by CloudFront", () => {
       t.hasResourceProperties("AWS::S3::Bucket", {
         BucketName: "ig-local-web-000000000000",
         PublicAccessBlockConfiguration: Match.objectLike({ BlockPublicAcls: true, RestrictPublicBuckets: true }),
       });
-      t.resourceCountIs("AWS::CloudFront::OriginAccessControl", 1);
-      t.hasResourceProperties("AWS::CloudFront::Distribution", {
-        DistributionConfig: Match.objectLike({
-          DefaultRootObject: "index.html",
-          DefaultCacheBehavior: Match.objectLike({ ViewerProtocolPolicy: "redirect-to-https" }),
-          CustomErrorResponses: Match.arrayWith([Match.objectLike({ ErrorCode: 404, ResponsePagePath: "/404.html" })]),
-        }),
-      });
+      const policies = JSON.stringify(t.findResources("AWS::S3::BucketPolicy"));
+      expect(policies).toContain("cloudfront.amazonaws.com");
+      expect(policies).toMatch(/Media/);
+    });
+
+    it("the posts and feed Lambdas no longer read the media bucket (no presigned GETs)", () => {
+      for (const name of ["ig-local-posts", "ig-local-feed"]) {
+        const fn = Object.values(t.findResources("AWS::Lambda::Function", { Properties: { FunctionName: name } }))[0] as any;
+        expect(fn.Properties.Environment.Variables.MEDIA_BUCKET, name).toBeUndefined();
+      }
     });
   });
 
@@ -295,7 +358,7 @@ describe("CoreStack on aws (stage=aws, ap-southeast-2)", () => {
     expect(Object.values(t.findResources("AWS::Lambda::Function", { Properties: { FunctionName: "ig-aws-presignup" } }))).toEqual([]);
   });
 
-  it("serves a custom domain when configured: CloudFront alias + cert, and CORS allows it", () => {
+  it("serves a custom domain when configured: CloudFront alias + cert, uploads CORS + the server allow it", () => {
     const cert = "arn:aws:acm:us-east-1:123456789012:certificate/abc";
     const d = synthAws({ domainName: "lite.amanarya.com", certificateArn: cert });
     d.hasResourceProperties("AWS::CloudFront::Distribution", {
@@ -305,9 +368,12 @@ describe("CoreStack on aws (stage=aws, ap-southeast-2)", () => {
       }),
     });
     const both = [cdnOrigin, "https://lite.amanarya.com"];
-    d.hasResourceProperties("AWS::ApiGatewayV2::Api", { CorsConfiguration: Match.objectLike({ AllowOrigins: both }) });
     d.hasResourceProperties("AWS::S3::Bucket", {
       CorsConfiguration: { CorsRules: [Match.objectLike({ AllowedMethods: ["PUT"], AllowedOrigins: both })] },
+    });
+    d.hasResourceProperties("AWS::Lambda::Function", {
+      FunctionName: "ig-aws-web-server",
+      Environment: { Variables: Match.objectLike({ SITE_ORIGINS: "https://lite.amanarya.com" }) },
     });
   });
 
@@ -317,9 +383,9 @@ describe("CoreStack on aws (stage=aws, ap-southeast-2)", () => {
     const body = JSON.stringify(Object.values(t.findResources("AWS::CloudWatch::Dashboard"))[0]);
     for (const ns of ["AWS/ApiGateway", "AWS/Lambda", "AWS/SQS", "AWS/States"]) expect(body).toContain(ns);
     expect(body).toContain("alarm"); // alarm status widget
-    // one Errors line per function (15 on aws: no presignup)
+    // one Errors line per function (16 on aws: no presignup, plus the web server)
     const fnIds = Object.keys(t.findResources("AWS::Lambda::Function", { Properties: { FunctionName: Match.stringLikeRegexp("^ig-aws-") } }));
-    expect(fnIds).toHaveLength(15);
+    expect(fnIds).toHaveLength(16);
     for (const id of fnIds) expect(body).toContain(`"Ref":"${id}"`);
   });
 
@@ -331,24 +397,32 @@ describe("CoreStack on aws (stage=aws, ap-southeast-2)", () => {
     });
   });
 
-  it("allows only the CloudFront origin on the API and on browser uploads", () => {
-    t.hasResourceProperties("AWS::ApiGatewayV2::Api", { CorsConfiguration: Match.objectLike({ AllowOrigins: [cdnOrigin] }) });
+  it("API has no CORS at all; browser uploads only from the CloudFront origin", () => {
+    t.hasResourceProperties("AWS::ApiGatewayV2::Api", { CorsConfiguration: Match.absent() });
     t.hasResourceProperties("AWS::S3::Bucket", {
       BucketName: "ig-aws-uploads-123456789012",
       CorsConfiguration: { CorsRules: [Match.objectLike({ AllowedMethods: ["PUT"], AllowedOrigins: [cdnOrigin] })] },
     });
   });
 
-  it("CloudFront: real 404s (OAC may list the bucket), security headers, edges incl. India", () => {
-    t.hasResourceProperties("AWS::CloudFront::Distribution", {
-      DistributionConfig: Match.objectLike({
-        CustomErrorResponses: [Match.objectLike({ ErrorCode: 404, ResponseCode: 404, ResponsePagePath: "/404.html" })],
-        DefaultCacheBehavior: Match.objectLike({ ResponseHeadersPolicyId: Match.anyValue() }),
-        PriceClass: "PriceClass_200",
-      }),
+  it("CloudFront: security headers on every behaviour, edges incl. India", () => {
+    const d = (Object.values(t.findResources("AWS::CloudFront::Distribution"))[0] as any).Properties.DistributionConfig;
+    expect(d.PriceClass).toBe("PriceClass_200");
+    for (const b of [d.DefaultCacheBehavior, ...d.CacheBehaviors]) expect(b.ResponseHeadersPolicyId).toBeDefined();
+  });
+
+  it("SSR server on aws: Secure cookies, email sign-up, real Function URL origin over https", () => {
+    t.hasResourceProperties("AWS::Lambda::Function", {
+      FunctionName: "ig-aws-web-server",
+      Environment: { Variables: Match.objectLike({
+        SECURE_COOKIES: "true", SIGNUP_EMAIL: "required", COGNITO_REGION: "ap-southeast-2",
+        API_URL: { "Fn::GetAtt": [Match.stringLikeRegexp("^Api"), "ApiEndpoint"] },
+      }) },
     });
-    const policy = JSON.stringify(t.findResources("AWS::S3::BucketPolicy"));
-    expect(policy).toContain("s3:ListBucket");
+    const d = (Object.values(t.findResources("AWS::CloudFront::Distribution"))[0] as any).Properties.DistributionConfig;
+    const server = d.Origins.find((o: any) => o.Id === d.DefaultCacheBehavior.TargetOriginId);
+    expect(server.CustomOriginConfig.OriginProtocolPolicy).toBe("https-only");
+    expect(server.OriginCustomHeaders.map((h: any) => h.HeaderName)).toEqual(["x-origin-verify"]);
   });
 
   it("deletes data with the stack (learning project: cdk destroy leaves nothing billable)", () => {

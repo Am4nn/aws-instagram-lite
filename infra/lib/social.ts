@@ -1,6 +1,5 @@
 import { Duration } from "aws-cdk-lib";
 import * as sqs from "aws-cdk-lib/aws-sqs";
-import * as s3 from "aws-cdk-lib/aws-s3";
 import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as secrets from "aws-cdk-lib/aws-secretsmanager";
@@ -15,7 +14,7 @@ import type { CoreStack } from "./core-stack.js";
  *   EventBridge rule --> SQS fanout (+DLQ) --> fanout Lambda --> FEED#<follower> items
  *   GET /feed (feed Lambda) = pushed items + pulled celeb posts, signed cursor (Secrets Manager key)
  */
-export function addSocial(stack: CoreStack, opts: { bus: events.EventBus; media: s3.Bucket }) {
+export function addSocial(stack: CoreStack, opts: { bus: events.EventBus }) {
   const { prefix, celebThreshold } = stack.stageConfig;
   const threshold = String(celebThreshold);
 
@@ -51,10 +50,9 @@ export function addSocial(stack: CoreStack, opts: { bus: events.EventBus; media:
 
   // ---------- read the feed ----------
   const feed = stack.addFunction("feed", "feed/handler.ts", {
-    env: { CELEB_THRESHOLD: threshold, CURSOR_SECRET_ARN: cursorKey.secretArn, MEDIA_BUCKET: opts.media.bucketName },
+    env: { CELEB_THRESHOLD: threshold, CURSOR_SECRET_ARN: cursorKey.secretArn },
   });
   cursorKey.grantRead(feed);
-  opts.media.grantRead(feed);
   stack.route("GET", "/feed", feed);
 
   return { cursorKey, fanoutQueue: queue, fanoutDlq: dlq };

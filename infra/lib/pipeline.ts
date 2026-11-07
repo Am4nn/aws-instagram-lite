@@ -37,10 +37,6 @@ export function addPipeline(stack: CoreStack) {
     publicAccessBlockConfiguration: {
       blockPublicAcls: true, blockPublicPolicy: true, ignorePublicAcls: true, restrictPublicBuckets: true,
     },
-    corsConfiguration: { corsRules: [{
-      // Browser presigned PUTs: from the CloudFront site only on aws, any origin locally.
-      allowedMethods: ["PUT"], allowedOrigins: stack.webOrigins ?? ["*"], allowedHeaders: ["*"], maxAge: 3000,
-    }] },
     notificationConfiguration: { queueConfigurations: [{ event: "s3:ObjectCreated:*", queue: queue.queueArn }] },
     // Originals are only needed until the pipeline has made the JPEGs; rejected/abandoned ones vanish too.
     lifecycleConfiguration: { rules: [{ id: "expire-originals", status: "Enabled", prefix: "uploads/", expirationInDays: 1 }] },
@@ -138,5 +134,10 @@ export function addPipeline(stack: CoreStack) {
   new CfnOutput(stack, "UploadsDlqUrl", { value: dlq.queueUrl });
   new CfnOutput(stack, "PipelineArn", { value: machine.stateMachineArn });
 
-  return { uploadsName, uploadsArn, media, bus, dlq, queue, machine };
+  /** CORS for the browser's presigned PUTs (called once the site's origins are known). */
+  const allowUploadsFrom = (allowedOrigins: string[]) => {
+    uploads.corsConfiguration = { corsRules: [{ allowedMethods: ["PUT"], allowedOrigins, allowedHeaders: ["*"], maxAge: 3000 }] };
+  };
+
+  return { uploadsName, uploadsArn, media, bus, dlq, queue, machine, allowUploadsFrom };
 }
