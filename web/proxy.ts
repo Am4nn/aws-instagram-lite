@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { ID_COOKIE } from "./lib/server/cookies";
 import { serverEnv } from "./lib/server/env";
-import { siteOrigins } from "./lib/server/csrf";
 import { gate } from "./lib/server/gate";
 
 /**
@@ -20,8 +19,9 @@ export function proxy(req: NextRequest) {
     case "error":
       return NextResponse.json({ error: r.error }, { status: r.status });
     case "redirect":
-      // Next needs an absolute URL here: build it from the host the browser used (x-forwarded-host behind CloudFront).
-      return NextResponse.redirect(new URL(r.location, siteOrigins(req.headers, [])[0] ?? req.url), 307);
+      // Next wants an absolute URL here; OpenNext turns a same-origin one back into a relative Location,
+      // so the browser stays on whatever host it used (CloudFront, custom domain, localhost:3000).
+      return NextResponse.redirect(new URL(r.location, req.url), 307);
     default:
       return NextResponse.next();
   }

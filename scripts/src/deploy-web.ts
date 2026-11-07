@@ -13,24 +13,31 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { S3Client } from "@aws-sdk/client-s3";
 import { assertFlociUp, useLocalEnv } from "./env.js";
-import { cdk, readOutputs } from "./deploy-local.js";
-import { flociEnvFile, ssrOriginHost } from "./urls.js";
+import { deployLocalStack } from "./deploy-local.js";
+import { flociEnvFile, localCdnUrl, ssrOriginHost } from "./urls.js";
 import { buildWeb, publishWeb } from "./web-publish.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
-/** Local CloudFront URL Floci serves for a distribution domain like abc123.cloudfront.net */
-export const localCdnUrl = (domain: string) => `http://${domain.replace(/\.cloudfront\.net$/, "")}.cloudfront.localhost.floci.io:4566`;
+export { localCdnUrl } from "./urls.js";
+
+/** Right after a container recreate the port can need a few more seconds. */
+async function waitForFloci() {
+  for (let i = 0; ; i++) {
+    try {
+      return await assertFlociUp();
+    } catch (e) {
+      if (i >= 15) throw e;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+}
 
 async function main() {
   await assertFlociUp();
   useLocalEnv();
   buildWeb();
-  cdk([
-    "deploy", "ig-local-core", "-c", "stage=local",
-    "--require-approval", "never", "--outputs-file", "cdk.out/outputs-local.json",
-  ]);
-  const out = readOutputs("ig-local-core");
+  const out = await deployLocalStack();
   const url = localCdnUrl(out.DistributionDomain);
   const r = await publishWeb({ s3: new S3Client({ forcePathStyle: true }), bucket: out.WebBucket });
   console.log(`Uploaded ${r.uploaded} assets (${r.deleted} leftovers removed).`);
@@ -42,7 +49,7 @@ async function main() {
     console.log("Floci settings changed (.env): recreating the container…");
     const d = spawnSync("docker", ["compose", "up", "-d", "--wait"], { cwd: root, stdio: "inherit" });
     if (d.status !== 0) throw new Error("docker compose up failed");
-    await assertFlociUp();
+    await waitForFloci();
   }
   const short = url.replace(".localhost.floci.io", ".localhost");
   console.log(`\nOpen: ${url}/login\n  (or, no DNS needed: ${short}/login)\n`);

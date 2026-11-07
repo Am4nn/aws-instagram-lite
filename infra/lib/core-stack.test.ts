@@ -317,6 +317,16 @@ describe("CoreStack", () => {
       expect(server.CustomOriginConfig).toMatchObject({ OriginProtocolPolicy: "http-only", HTTPPort: 4566 });
     });
 
+    it("Floci runs no CloudFront Functions: the local CloudFront URL (context) is an allowed site origin", () => {
+      const app = new App({ context: { "aws:cdk:bundling-stacks": [], localSiteOrigin: "http://d1.cloudfront.localhost.floci.io:4566" } });
+      const config = loadConfig("local", { AWS_ENDPOINT_URL: "http://localhost:4566" });
+      const stack = new CoreStack(app, "ig-local-core", { config, env: { account: "000000000000", region: "us-east-1" }, webServerBundle: WEB_PLACEHOLDER });
+      Template.fromStack(stack).hasResourceProperties("AWS::Lambda::Function", {
+        FunctionName: "ig-local-web-server",
+        Environment: { Variables: Match.objectLike({ SITE_ORIGINS: "http://d1.cloudfront.localhost.floci.io:4566" }) },
+      });
+    });
+
     it("a CloudFront Function copies the viewer Host into x-forwarded-host", () => {
       t.hasResourceProperties("AWS::CloudFront::Function", { FunctionCode: Match.stringLikeRegexp("x-forwarded-host") });
     });

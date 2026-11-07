@@ -45,6 +45,12 @@ export function addWeb(stack: CoreStack, o: {
   // (origin header) and the Lambda (env) are given it.
   const originSecret = Fn.select(2, Fn.split("/", stack.stackId));
 
+  // Extra browser origins for the CSRF check (on top of x-forwarded-host): the custom domain on aws. Floci's
+  // CloudFront runs no CloudFront Functions, so locally the deploy scripts pass the local CloudFront URL as
+  // context (`-c localSiteOrigin=...`, known after the first deploy; can't be a reference: that's a cycle).
+  const localSiteOrigin = isLocal ? stack.node.tryGetContext("localSiteOrigin") as string | undefined : undefined;
+  const siteOriginsEnv = [domainName ? `https://${domainName}` : "", localSiteOrigin ?? ""].filter(Boolean).join(",");
+
   // ---------- the Next.js server ----------
   const bundle = o.serverBundle ?? (existsSync(WEB_SERVER_BUNDLE) ? WEB_SERVER_BUNDLE : WEB_PLACEHOLDER);
   const logGroup = new logs.LogGroup(stack, "Logs-web-server", {
@@ -67,7 +73,7 @@ export function addWeb(stack: CoreStack, o: {
       COGNITO_REGION: stack.region,
       SIGNUP_EMAIL: isLocal ? "" : "required", // aws: email + confirmation code at sign-up
       SECURE_COOKIES: isLocal ? "false" : "true", // Floci serves plain http
-      SITE_ORIGINS: domainName ? `https://${domainName}` : "",
+      SITE_ORIGINS: siteOriginsEnv,
       ORIGIN_VERIFY_SECRET: originSecret,
     },
   });

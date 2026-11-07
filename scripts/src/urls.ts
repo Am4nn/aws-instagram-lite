@@ -1,3 +1,6 @@
+/** Local CloudFront URL Floci serves for a distribution domain like abc123.cloudfront.net */
+export const localCdnUrl = (domain: string) => `http://${domain.replace(/\.cloudfront\.net$/, "")}.cloudfront.localhost.floci.io:4566`;
+
 /** CDK prints the real-AWS invoke URL; Floci serves the same API on a local hostname. */
 export function localApiUrl(awsUrl: string): string {
   const m = /^https?:\/\/([a-z0-9]+)\.execute-api\./.exec(awsUrl);
