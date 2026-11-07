@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { Stack, StackProps, RemovalPolicy, CfnOutput, Duration } from "aws-cdk-lib";
+import { Stack, StackProps, RemovalPolicy, CfnOutput, Duration, Fn } from "aws-cdk-lib";
 import { Construct } from "constructs";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as lambda from "aws-cdk-lib/aws-lambda";
@@ -23,6 +23,8 @@ export const servicePath = (file: string) =>
 
 export interface CoreStackProps extends StackProps {
   config: StageConfig;
+  /** Folder with the server Lambda code (default: web/.open-next/server-functions/default if built, else a placeholder). */
+  webServerBundle?: string;
 }
 
 export class CoreStack extends Stack {
@@ -32,9 +34,9 @@ export class CoreStack extends Stack {
   readonly authorizer: HttpJwtAuthorizer;
   readonly stageConfig: StageConfig;
   /** aws: `https://<CloudFront domain>` (+ the custom domain), the only browser origins allowed. local: undefined (= any). */
-  readonly webOrigins?: string[];
-  /** Every function made by addFunction, by short name (feeds the ops dashboard). */
-  readonly functions: Record<string, NodejsFunction> = {};
+  webOrigins?: string[];
+  /** Every Lambda (addFunction + the web server), by short name (feeds the ops dashboard). */
+  readonly functions: Record<string, lambda.Function> = {};
 
   constructor(scope: Construct, id: string, props: CoreStackProps) {
     super(scope, id, props);
@@ -89,26 +91,9 @@ export class CoreStack extends Stack {
       { jwtAudience: [client.userPoolClientId] },
     );
 
-    // ---------- Web hosting: S3 + CloudFront (step 7) ----------
-    // Created before the API: on aws the API's CORS names the distribution's domain
-    // (API → CloudFront dependency only; CloudFront doesn't depend on the API, so no cycle).
-    const web = addWeb(this);
-    const custom = props.config.domainName ? [`https://${props.config.domainName}`] : [];
-    this.webOrigins = isLocal ? undefined : [`https://${web.distribution.distributionDomainName}`, ...custom];
-
     // ---------- API ----------
-    // HTTP API CORS overrides the CORS headers the Lambdas send (lib/http.ts says "*").
-    this.api = new apigwv2.HttpApi(this, "Api", {
-      apiName: `${prefix}-api`,
-      corsPreflight: {
-        allowOrigins: this.webOrigins ?? ["*"],
-        allowMethods: [
-          apigwv2.CorsHttpMethod.GET, apigwv2.CorsHttpMethod.POST,
-          apigwv2.CorsHttpMethod.PUT, apigwv2.CorsHttpMethod.DELETE,
-        ],
-        allowHeaders: ["authorization", "content-type"],
-      },
-    });
+    // No CORS: since step 9 no browser calls the API. The Next.js server (BFF) calls it server-to-server.
+    this.api = new apigwv2.HttpApi(this, "Api", { apiName: `${prefix}-api` });
     this.route("GET", "/health", this.addFunction("health", "health.ts"), { public: true });
 
     const users = this.addFunction("users", "users/handler.ts");
@@ -118,20 +103,29 @@ export class CoreStack extends Stack {
 
     // ---------- Posts + upload pipeline (step 3) ----------
     const pipeline = addPipeline(this);
-    const posts = this.addFunction("posts", "posts/handler.ts", {
-      env: { UPLOADS_BUCKET: pipeline.uploadsName, MEDIA_BUCKET: pipeline.media.bucketName },
-    });
+    const posts = this.addFunction("posts", "posts/handler.ts", { env: { UPLOADS_BUCKET: pipeline.uploadsName } });
     posts.addToRolePolicy(new iam.PolicyStatement({ actions: ["s3:PutObject"], resources: [`${pipeline.uploadsArn}/*`] }));
-    pipeline.media.grantRead(posts);
     this.route("POST", "/posts", posts);
     this.route("GET", "/posts/{id}", posts);
     this.route("GET", "/users/{userId}/posts", posts);
 
     // ---------- Follow + feed (step 4) ----------
-    const social = addSocial(this, { bus: pipeline.bus, media: pipeline.media });
+    const social = addSocial(this, { bus: pipeline.bus });
 
     // ---------- Likes, comments, notifications (step 5) ----------
     const engage = addEngage(this, { bus: pipeline.bus });
+
+    // ---------- Web: Next.js server on Lambda + S3 + CloudFront (steps 7 + 9) ----------
+    const web = addWeb(this, {
+      media: pipeline.media,
+      // local: the server Lambda reaches Floci's API by host name (Floci's DNS answers *.localhost.floci.io)
+      apiUrl: isLocal ? Fn.join("", ["http://", this.api.apiId, ".execute-api.localhost.floci.io:4566"]) : this.api.apiEndpoint,
+      userPoolClientId: client.userPoolClientId,
+      serverBundle: props.webServerBundle,
+    });
+    // Browser presigned PUTs: from the site only on aws (set now that the distribution exists), any origin locally.
+    this.webOrigins = isLocal ? undefined : web.siteOrigins;
+    pipeline.allowUploadsFrom(this.webOrigins ?? ["*"]);
 
     // ---------- Ops: alarms + ops topic (step 6) ----------
     addOps(this, {

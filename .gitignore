@@ -8,3 +8,7 @@ out/
 .env
 web/tsconfig.tsbuildinfo
 scripts/.photos/
+
+# step 9: OpenNext build output, dev-only env for next dev
+.open-next/
+.env.development.local

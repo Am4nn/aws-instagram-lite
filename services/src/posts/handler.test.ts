@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from "aws-lambda";
 import { makeHandler, type PostsDeps } from "./handler.js";
 import type { Post } from "./repo.js";
+import { mediaUrl } from "./keys.js";
+import { json } from "../lib/http.js";
 
 function deps(over: Partial<PostsDeps> = {}): PostsDeps & { posts: Map<string, Post> } {
   const posts = new Map<string, Post>();
@@ -18,7 +20,6 @@ function deps(over: Partial<PostsDeps> = {}): PostsDeps & { posts: Map<string, P
       async listByUser(userId) { return [...posts.values()].filter((p) => p.userId === userId && p.status === "READY"); },
     },
     presignPut: async (key, type, size) => `https://s3/put/${key}?type=${type}&size=${size}`,
-    presignGet: async (key) => `https://s3/get/${key}`,
     likedBy: async (ids, me) => new Set(me === "fan" ? ids : []),
     ...over,
   };
@@ -36,6 +37,15 @@ const call = async (h: ReturnType<typeof makeHandler>, e: APIGatewayProxyEventV2
   const r = await h(e);
   return { status: r.statusCode, body: JSON.parse(r.body as string) };
 };
+
+describe("media URLs", () => {
+  it("are same-site paths served by CloudFront /media/* (no presigned GETs)", () => {
+    expect(mediaUrl("media/p1/thumb.jpg")).toBe("/media/p1/thumb.jpg");
+  });
+  it("API responses carry no CORS header (only the Next.js server calls the API)", () => {
+    expect(json(200, {}).headers).not.toHaveProperty("access-control-allow-origin");
+  });
+});
 
 describe("posts handler", () => {
   it("POST /posts creates a PENDING post and returns a presigned PUT for the caller's own key", async () => {
@@ -58,7 +68,7 @@ describe("posts handler", () => {
     expect(pending.body.thumbUrl).toBeUndefined();
     d.posts.set("p1", { ...d.posts.get("p1")!, status: "READY", media: { thumb: "media/p1/thumb.jpg", full: "media/p1/full.jpg", width: 1, height: 1 } });
     const ready = await call(h, ev("GET /posts/{id}", { params: { id: "p1" } }));
-    expect(ready.body).toMatchObject({ thumbUrl: "https://s3/get/media/p1/thumb.jpg", fullUrl: "https://s3/get/media/p1/full.jpg", likedByMe: false });
+    expect(ready.body).toMatchObject({ thumbUrl: "/media/p1/thumb.jpg", fullUrl: "/media/p1/full.jpg", likedByMe: false });
     expect((await call(h, ev("GET /posts/{id}", { sub: "fan", params: { id: "p1" } }))).body.likedByMe).toBe(true);
   });
 
@@ -74,6 +84,6 @@ describe("posts handler", () => {
     d.posts.set("p9", { postId: "p9", userId: "u7", caption: "", contentType: "image/png", status: "READY", createdAt: "t",
       likeCount: 0, commentCount: 0, media: { thumb: "media/p9/thumb.jpg", full: "media/p9/full.jpg", width: 1, height: 1 } });
     const r = await call(makeHandler(d), ev("GET /users/{userId}/posts", { params: { userId: "u7" } }));
-    expect(r.body).toEqual({ items: [expect.objectContaining({ postId: "p9", thumbUrl: "https://s3/get/media/p9/thumb.jpg" })] });
+    expect(r.body).toEqual({ items: [expect.objectContaining({ postId: "p9", thumbUrl: "/media/p9/thumb.jpg" })] });
   });
 });

@@ -3,14 +3,14 @@ import { ImageOff, MessageCircle } from "lucide-react";
 import { LikeButton } from "../LikeButton";
 import { Avatar } from "../ui/Avatar";
 import { Skeleton, SkeletonText } from "../ui/Skeleton";
-import { fullDate, timeAgo } from "../../lib/time";
-import type { FeedItem } from "../../lib/api";
+import { Time } from "../ui/Time";
+import type { FeedItem } from "../../lib/types";
 
 /** One post in the home feed: header, square photo (links to the post), actions, caption, comments link. */
 export function FeedCard({ post: p }: { post: FeedItem }) {
   const name = p.author.username;
-  const postHref = `/p?id=${p.postId}&u=${encodeURIComponent(name)}`;
-  const profileHref = `/u?name=${encodeURIComponent(name)}`;
+  const postHref = `/p/${p.postId}?u=${encodeURIComponent(name)}`;
+  const profileHref = `/u/${encodeURIComponent(name)}`;
   return (
     <article className="feed-card">
       <header className="feed-head">
@@ -19,7 +19,7 @@ export function FeedCard({ post: p }: { post: FeedItem }) {
         </Link>
         <Link href={profileHref} className="author">{name}</Link>
         <span className="feed-dot" aria-hidden>·</span>
-        <time className="feed-time" dateTime={p.createdAt} title={fullDate(p.createdAt)}>{timeAgo(p.createdAt)}</time>
+        <Time className="feed-time" iso={p.createdAt} />
       </header>
 
       {/* First post link in the card: the photo (smoke test clicks it). */}

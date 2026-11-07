@@ -22,6 +22,8 @@ services:
       # groups them under "instagram-lite" next to the floci container.
       FLOCI_DOCKER_EXTRA_LABELS_0__KEY: "com.docker.compose.project"
       FLOCI_DOCKER_EXTRA_LABELS_0__VALUE: "instagram-lite"
+      # Step 9: let local CloudFront proxy to the SSR Lambda's Function URL (it resolves to 127.0.0.1).
+      FLOCI_SERVICES_CLOUDFRONT_ALLOWED_PRIVATE_ORIGIN_HOSTS: "${SSR_ORIGIN_HOST:-none.invalid}" # exact host, no wildcards; written to .env by deploy:web
       FLOCI_SECURITY_EXTRA_CORS_ALLOWED_HEADERS: "x-amz-target,x-amz-user-agent,amz-sdk-invocation-id,amz-sdk-request"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock # Lambda runs in sibling containers

@@ -68,8 +68,18 @@ We use our own construct rather than SST or `cdk-nextjs`, so every resource is v
 
 **Static export is removed.** `output: "export"` and the `?id=` query-string routes become real dynamic routes (`/p/[id]`, `/u/[name]`). Old `?id=` links redirect.
 
+## Spike results (2026-11-07, Floci 2.4.0) and the decisions they force
+- **Lambda Function URL works:** the path, query string and `Cookie` reach the event, and `cookies: [...]` in the response comes back as `Set-Cookie`. Locally, call it by host: `<id>.lambda-url.us-east-1.localhost.floci.io:4566`.
+- **CloudFront → Function URL works** once the *exact* host is listed in `FLOCI_SERVICES_CLOUDFRONT_ALLOWED_PRIVATE_ORIGIN_HOSTS`. Wildcards are ignored. The deploy script writes it to `.env` as `SSR_ORIGIN_HOST`, and docker-compose reads it, the same way as `WEB_ORIGIN`.
+  - Path-pattern behaviours (`/_next/static/*`, `/media/*`) on Floci weren't tested yet, so the build must verify them.
+- **Decision: no streaming.** Use OpenNext's plain `aws-lambda` wrapper, not `aws-lambda-streaming`. It's simpler, works on Floci, and our pages are small.
+- **Decision: protect the Function URL with a secret origin header, not OAC.**
+  - With OAC on a Lambda Function URL, every POST from the browser must carry `x-amz-content-sha256`, which would break plain form and fetch POSTs. OAC also isn't emulated on Floci.
+  - So: `authType: NONE`. CloudFront adds `x-origin-verify: <random secret>`, and `proxy.ts` rejects any request without it with 403. The secret is generated per stage and passed to both CloudFront and the Lambda.
+  - OAC + signed hashes is documented as the stricter upgrade.
+
 ## Floci first
-The first task is a **spike** that answers three questions:
+The first task was a **spike** that answers three questions:
 1. Does Floci run a Lambda Function URL?
 2. Can Floci's CloudFront use that URL as an origin?
 3. Does response streaming work?

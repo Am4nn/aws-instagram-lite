@@ -1,13 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useEffect } from "react";
-import { isSignedIn } from "../lib/auth";
-import { Spinner } from "../components/ui/Spinner";
-
-/** Entry: signed in → feed, otherwise → login. */
+/** Entry: proxy.ts has already sent logged-out visitors to /login, so this is a signed-in user. */
 export default function Home() {
-  useEffect(() => {
-    window.location.replace(isSignedIn() ? "/feed" : "/login");
-  }, []);
-  return <main className="narrow entry"><Spinner size={22} /></main>;
+  redirect("/feed");
 }

@@ -2,13 +2,12 @@ import type { APIGatewayProxyEventV2WithJWTAuthorizer } from "aws-lambda";
 import { QueryCommand, type DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { batchGetAll } from "../lib/batch.js";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { json } from "../lib/http.js";
 import { subFromEvent } from "../lib/auth.js";
 import { docClient, tableName } from "../lib/db.js";
 import { profileKey } from "../users/repo.js";
 import { postKey } from "../posts/repo.js";
+import { mediaUrl } from "../posts/keys.js";
 import { makeFollowsRepo } from "../social/repo.js";
 import { makeEngageRepo } from "../engage/repo.js";
 import { signCursor, verifyCursor } from "./cursor.js";
@@ -64,10 +63,7 @@ function realDeps(): FeedDeps {
   const table = tableName();
   const follows = makeFollowsRepo(doc, table);
   const sm = new SecretsManagerClient({});
-  const s3 = new S3Client({ forcePathStyle: true });
   let secret: Promise<string> | undefined; // fetched once per Lambda container
-  const presign = (Key: string) =>
-    getSignedUrl(s3, new GetObjectCommand({ Bucket: process.env.MEDIA_BUCKET, Key }), { expiresIn: 3600 });
 
   // The celeb registry is tiny and read by every feed request: cache it per container for 60 s.
   let celebCache: { at: number; ids: Promise<string[]> } | undefined;
@@ -124,7 +120,7 @@ function realDeps(): FeedDeps {
           postId: p.postId, userId: p.userId, caption: p.caption, createdAt: p.createdAt,
           likeCount: p.likeCount ?? 0, commentCount: p.commentCount ?? 0, likedByMe: liked.has(r.postId),
           author: { userId: r.authorId, username: (a?.username as string) ?? "unknown" },
-          thumbUrl: await presign(p.media.thumb), fullUrl: await presign(p.media.full),
+          thumbUrl: mediaUrl(p.media.thumb), fullUrl: mediaUrl(p.media.full),
         });
       }
       return out;

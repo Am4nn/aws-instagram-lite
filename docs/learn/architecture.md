@@ -1,23 +1,29 @@
 # Architecture: everything in the `ig-<stage>-core` stack
 
 Drawn from `infra/lib/*.ts` (one CDK stack). Same diagram for Floci and real AWS; only endpoints differ.
-16 Lambdas, 1 DynamoDB table, 3 S3 buckets, 1 state machine, 1 event bus, 7 SQS queues, 2 SNS topics, 6 alarms.
+17 Lambdas on Floci, 16 on AWS (the presignup trigger is local-only; both stages have the `web-server` Lambda
+from step 9), 1 DynamoDB table, 3 S3 buckets, 1 CloudFront distribution (+ 1 CloudFront Function),
+1 state machine, 1 event bus, 7 SQS queues, 2 SNS topics, 6 alarms.
 
-## 1. Request path (browser → API → table)
+## 1. Request path (browser → CloudFront → Next.js server → API → table)
+
+Since step 9 the browser only talks to one domain. The Next.js server (the BFF) calls the API for it.
 
 ```mermaid
 flowchart LR
-  B([Browser])
-  B -->|HTML/JS| CF[CloudFront] -->|OAC| WEB[(S3 web)]
-  B -->|sign up / log in| COG[Cognito user pool]
-  COG -.->|PreSignUp| PSU[λ presignup]
-  B -->|Bearer JWT| API[HTTP API]
+  B([Browser]) -->|https, cookies| CF[CloudFront]
+  CF -->|/_next/static/*, OAC| WEB[(S3 web)]
+  CF -->|/media/*, OAC| MEDIA[(S3 media)]
+  CF -->|"everything else + x-origin-verify"| SSR[λ web-server<br/>Next.js / OpenNext<br/>Function URL]
+  SSR -->|sign in, refresh| COG[Cognito user pool]
+  COG -.->|PreSignUp, local only| PSU[λ presignup]
+  SSR -->|Bearer JWT from the ig_id cookie| API[HTTP API]
   API -->|JWT authorizer checks token| COG
   API --> USERS[λ users] & POSTS[λ posts] & SOCIAL[λ social] & FEED[λ feed] & ENGAGE[λ engage] & NOTIFS[λ notifications]
   API -->|public| HEALTH[λ health]
   USERS & POSTS & SOCIAL & FEED & ENGAGE & NOTIFS --> DDB[(DynamoDB ig-*-main)]
   FEED -->|cursor HMAC key| SM[Secrets Manager]
-  POSTS & FEED -->|presigned GET| MEDIA[(S3 media)]
+  B -.->|presigned PUT, photo bytes| UP[(S3 uploads)]
 ```
 
 ## 2. Upload pipeline
@@ -62,5 +68,5 @@ flowchart LR
   SFN[Pipeline failed executions] --> AL
   API[HTTP API 5xx] --> AL
   AL --> OPS[SNS ops] -->|local only| INBOX[SQS ops-inbox]
-  L[All 16 λ] -->|JSON logs| CWL[CloudWatch Logs /ig/prefix/fn, 14 days]
+  L[All 17 λ, 16 on AWS] -->|logs| CWL[CloudWatch Logs /ig/prefix/fn, 14 days]
 ```

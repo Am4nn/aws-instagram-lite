@@ -6,6 +6,8 @@
  *  engage:   likes/comments counts, notifications via CDC (like, comment, follow; not self), mark read
  *  ops:      (explicit only, ~4 min) poison message → DLQ → alarm → ops inbox → redrive
  *  ui:       (needs `npm -w web run dev`) create account → username → upload via /new → grid shows it
+ *  ssr:      (explicit, after deploy:web) the server-rendered site through CloudFront: HTML, cookies, CSRF, BFF
+ *  cdn:      (explicit, after deploy:web) the same browser flow as ui, through CloudFront; no token in document.cookie
  */
 import { randomUUID } from "node:crypto";
 import { existsSync, writeFileSync, mkdtempSync } from "node:fs";
@@ -22,11 +24,12 @@ import { localApiUrl } from "./urls.js";
 import { makePng } from "./png.js";
 import { seed } from "./seed.js";
 import { chaos, depth, inbox, redrive, purge, queueUrl } from "./ops.js";
-import { localCdnUrl } from "./deploy-web.js";
+import { localCdnUrl, ssrOriginHost } from "./urls.js";
+import { ssrFlow } from "./smoke-ssr.js";
 import { SQSClient, PurgeQueueCommand } from "@aws-sdk/client-sqs";
 import { call, eventually, signUpOrIn, ensureProfile, uploadPhoto, waitForStatus as waitPost, type Session } from "./client.js";
 
-const WEB = "http://localhost:3000";
+const DEV_WEB = "http://localhost:3000";
 const CHROME = [
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
@@ -90,7 +93,9 @@ async function pipelineFlow(c: Ctx) {
   const t0 = Date.now();
   const good = await waitForStatus(c, u, await upload(c, u, makePng(1600, 900), "smoke photo"));
   ok(good.status === "READY" && good.thumbUrl && good.fullUrl, `pipeline: real PNG → READY in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-  ok((await fetch(good.thumbUrl)).ok, "pipeline: thumb URL serves the resized image");
+  ok(good.thumbUrl === `/media/${good.postId}/thumb.jpg`, "pipeline: thumb URL is a same-site /media path");
+  const cdn = readOutputs("ig-local-core").DistributionDomain;
+  if (cdn) ok((await fetch(`${localCdnUrl(cdn)}${good.thumbUrl}`)).ok, "pipeline: CloudFront serves the resized image at that path");
   const grid = await fetch(`${c.api}/users/${u.userId}/posts`, { headers: u.headers }).then((r) => r.json());
   ok(grid.items.length === 1 && grid.items[0].postId === good.postId, "pipeline: post appears in the profile grid");
   const me = await fetch(`${c.api}/me`, { headers: u.headers }).then((r) => r.json());
@@ -101,14 +106,16 @@ async function pipelineFlow(c: Ctx) {
   ok(grid2.items.length === 1, "pipeline: FAILED post stays out of the grid");
 }
 
-async function uiFlow() {
-  if (!CHROME) return console.log("⚠️  ui: no Chrome/Edge found, skipped");
+/** Browser flow on `web` (dev server, or the CloudFront URL for `cdn`). `shots`: refresh the docs screenshots. */
+async function uiFlow(WEB = DEV_WEB, shots = true, tag = "ui") {
+  if (!CHROME) return console.log(`⚠️  ${tag}: no Chrome/Edge found, skipped`);
   if (!(await fetch(WEB).then(() => true, () => false))) {
-    return console.log("⚠️  ui: web dev server not running (npm -w web run dev), skipped");
+    return console.log(`⚠️  ${tag}: ${WEB} not reachable (npm -w web run dev / npm run deploy:web), skipped`);
   }
+  const shot = (name: string) => (shots ? page.screenshot({ path: img(name) }) : Promise.resolve());
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
+  const page = await browser.newPage();
   try {
-    const page = await browser.newPage();
     await page.setViewport({ width: 800, height: 900 });
     const login = `ui${randomUUID().slice(0, 6)}`;
     await page.goto(`${WEB}/login`, { waitUntil: "networkidle0" });
@@ -116,14 +123,14 @@ async function uiFlow() {
     await page.type('input[autocomplete="username"]', login);
     await page.type('input[type="password"]', "password1");
     await Promise.all([page.waitForNavigation({ timeout: 30000 }), page.click('button[type="submit"]')]);
-    ok(page.url().endsWith("/me"), "ui: create account lands on /me");
+    ok(page.url().endsWith("/me"), `${tag}: create account lands on /me`);
     await page.waitForSelector("form.card h2", { timeout: 20000 });
-    ok((await page.$eval("form.card h2", (el) => el.textContent)) === "Choose a username", "ui: asks for a username");
+    ok((await page.$eval("form.card h2", (el) => el.textContent)) === "Choose a username", `${tag}: asks for a username`);
     await page.type("form.card input", login);
     await page.click('form.card button[type="submit"]');
     await page.waitForSelector(".profile h1", { timeout: 20000 });
-    ok((await page.$eval(".profile h1", (el) => el.textContent)) === `@${login}`, "ui: profile shows the username");
-    await page.screenshot({ path: img("02-profile.png") });
+    ok((await page.$eval(".profile h1", (el) => el.textContent)) === `@${login}`, `${tag}: profile shows the username`);
+    await shot("02-profile.png");
 
     const file = join(mkdtempSync(join(tmpdir(), "ig-")), "photo.png");
     writeFileSync(file, makePng(1200, 1200, [214, 120, 60]));
@@ -137,11 +144,12 @@ async function uiFlow() {
       const img = document.querySelector<HTMLImageElement>(".grid .tile img");
       return img?.complete && img.naturalWidth > 0;
     }, { timeout: 20000 });
-    ok(true, "ui: upload via /new → back on /me with the photo in the grid");
-    await page.screenshot({ path: img("03-grid.png") });
+    ok(true, `${tag}: upload via /new → back on /me with the photo in the grid`);
+    await shot("03-grid.png");
 
     // Seeded user's home feed (run `npm run seed` first; skipped if bob doesn't exist)
-    await page.evaluate(() => localStorage.clear());
+    ok(await page.evaluate(() => !document.cookie.includes("ig_")), `${tag}: document.cookie shows no login token (httpOnly)`);
+    await page.evaluate(() => fetch("/bff/auth/signout", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }));
     await page.goto(`${WEB}/login`, { waitUntil: "networkidle0" });
     await page.type('input[autocomplete="username"]', "bob");
     await page.type('input[type="password"]', "password1");
@@ -150,24 +158,26 @@ async function uiFlow() {
     if (landed) {
       await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>(".feed-card img")].slice(0, 2)
         .every((i) => i.complete && i.naturalWidth > 0), { timeout: 20000 });
-      ok(true, "ui: bob's home feed renders posts");
-      await page.screenshot({ path: img("04-feed.png") });
+      ok(true, `${tag}: bob's home feed renders posts`);
+      await shot("04-feed.png");
 
       // Like + comment on the first post, then the activity page
-      await page.click(".feed-card a[href^='/p?id=']:not(.author):not(.muted)");
+      await page.click(".feed-card a[href^='/p/']:not(.author):not(.muted)");
       await page.waitForSelector(".post .actions button.like", { timeout: 20000 });
       await page.waitForSelector(".comment-form input");
+      // The form is in the server HTML before React has hydrated it: let the page settle before typing.
+      await page.waitForNetworkIdle({ idleTime: 500, timeout: 10000 }).catch(() => {});
       await page.click(".post .actions button.like");
       await page.type(".comment-form input", "Nice one (from the smoke test)");
       await page.click(".comment-form button[type='submit']");
       await page.waitForFunction(() => document.querySelector(".comments")?.textContent?.includes("from the smoke test"), { timeout: 20000 });
-      ok(true, "ui: like + comment on a post page");
-      await page.screenshot({ path: img("05-post.png") });
+      ok(true, `${tag}: like + comment on a post page`);
+      await shot("05-post.png");
       await page.goto(`${WEB}/notifications`, { waitUntil: "networkidle0" });
       await page.waitForSelector(".notifs li, main p.muted", { timeout: 20000 });
-      ok(true, "ui: activity page renders");
-      await page.screenshot({ path: img("05-activity.png") });
-    } else console.log("⚠️  ui: no feed for bob (run npm run seed), skipped");
+      ok(true, `${tag}: activity page renders`);
+      await shot("05-activity.png");
+    } else console.log(`⚠️  ${tag}: no feed for bob (run npm run seed), skipped`);
   } finally {
     await browser.close();
   }
@@ -243,24 +253,8 @@ async function engageFlow(c: Ctx) {
 }
 
 async function cdnFlow() {
-  if (!CHROME) return console.log("⚠️  cdn: no Chrome/Edge found, skipped");
   const base = localCdnUrl(readOutputs("ig-local-core").DistributionDomain);
-  const page404 = await fetch(`${base}/login`);
-  ok(page404.ok && (await page404.text()).includes("<html"), "cdn: /login served from S3 via CloudFront (extensionless key)");
-  const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
-  try {
-    const page = await browser.newPage();
-    await page.setViewport({ width: 800, height: 900 });
-    await page.goto(`${base}/login`, { waitUntil: "networkidle0" });
-    await page.type('input[autocomplete="username"]', "bob");
-    await page.type('input[type="password"]', "password1");
-    await page.click('button[type="submit"]');
-    await page.waitForSelector(".feed-card img", { timeout: 30000 });
-    ok(page.url().startsWith(`${base}/feed`), "cdn: log in through CloudFront → feed (browser → Cognito CORS ok)");
-    await page.screenshot({ path: img("07-cdn.png") });
-  } finally {
-    await browser.close();
-  }
+  await uiFlow(base, false, "cdn");
 }
 
 async function opsFlow() {
@@ -288,7 +282,12 @@ async function main() {
   if (!only || only === "engage") await engageFlow(c);
   if (!only || only === "ui") await uiFlow();
   if (only === "ops") await opsFlow();
-  if (only === "cdn") await cdnFlow(); // after `npm run deploy:web` // slow (~4 min): run explicitly with `npm run smoke ops`
+  // after `npm run deploy:web`:
+  if (only === "cdn") await cdnFlow();
+  if (only === "ssr") {
+    await seed(c); // idempotent: bob + his feed
+    await ssrFlow({ base: localCdnUrl(out.DistributionDomain), functionUrl: `http://${ssrOriginHost(out.ServerFunctionUrl)}:4566/`, ok });
+  }
 }
 
 main().catch((e) => { console.error(String(e.message ?? e)); process.exit(1); });

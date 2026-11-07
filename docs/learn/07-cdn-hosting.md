@@ -49,7 +49,10 @@ rewrites `/login` → `/login.html` (most common), or upload a copy under the ex
 
 ## Next.js with server-side rendering (SSR) on AWS: how companies do it
 
-Our app is **static** (every page is a client component that calls the API). Companies needing
+> **Update (step 9):** the app now does exactly the OpenNext row below. See [09-ssr.md](09-ssr.md).
+> The rest of this page describes the step 7 static version.
+
+In step 7 our app was **static** (every page a client component that calls the API). Companies needing
 SSR (SEO, personalised HTML) pick one of these:
 
 | Option | How | Notes | On Floci? |
