@@ -28,6 +28,6 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  // Everything except the hashed build assets (served from S3 by CloudFront) and the favicon.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Everything except what CloudFront serves from S3 itself (build assets, photos) and the favicon.
+  matcher: ["/((?!_next/static|_next/image|media/|favicon.ico).*)"],
 };
