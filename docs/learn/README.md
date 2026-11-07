@@ -47,7 +47,14 @@ Tick boxes as you go. Big picture first: [architecture.md](architecture.md) (eve
 - [ ] Code: `infra/lib/web.ts`, `scripts/src/web-plan.ts` (cache headers per file)
 - [ ] Try: `npm run deploy:web`, open the printed URL, log in as bob
 
-## Step 8: real AWS (next, together)
+## Step 8: real AWS
 - [ ] [08-real-aws-checklist.md](08-real-aws-checklist.md): account, MFA, **$5 budget first**, SSO login
+
+## Step 9: Server-side rendering (Next.js on Lambda, BFF, cookie login)
+- [ ] [09-ssr.md](09-ssr.md): why SSR, the BFF, httpOnly cookies + CSRF, CloudFront routing, cold starts, cost
+- [ ] [system-design-notes.md §10](system-design-notes.md#10-rendering-and-the-bff-ssr-vs-spa-cookies-vs-tokens): SSR vs SPA, BFF, cookies vs tokens
+- [ ] Code: `web/proxy.ts` + `web/lib/server/gate.ts` (every request's first stop), `web/app/bff/auth/*`, `infra/lib/web.ts`
+- [ ] Try: log in as bob, then DevTools → Application → Cookies (see HttpOnly), and `document.cookie` in the console
+- [ ] Try: `npm run smoke ssr` and read what each line checks in `scripts/src/smoke-ssr.ts`
 
 ## Every step has a "How big companies do it" table at the end. Read those for interview follow-ups.

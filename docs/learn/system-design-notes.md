@@ -237,3 +237,32 @@ flowchart LR
 
 **Interview angle:** name concrete alarms, explain at-least-once + DLQ + redrive, mention SLOs and
 error budgets, and say how you'd test failure (chaos experiments, game days).
+
+---
+
+## 10. Rendering and the BFF (SSR vs SPA, cookies vs tokens)
+
+**The question:** where does the HTML get built, and where does the login token live?
+
+- **SPA / static (step 7):** the server sends an empty shell, the browser fetches data with a token it
+  holds (often `localStorage`). Cheap to host (just a CDN), but slow first paint, empty link previews,
+  and any injected script can steal the token.
+- **SSR (step 9):** a server builds each page with the data in it. Fast first paint, real previews,
+  and the token can stay in an **httpOnly cookie** the page's scripts can't read. Costs a server per
+  request (Lambda: $0 idle, pay per request; containers: always-on).
+- **BFF (backend-for-frontend):** the web app gets its own thin server that holds the session, calls the
+  internal APIs and shapes data for its pages. Each client (web, iOS, TV) can have its own BFF.
+- **Cookies bring CSRF:** the browser attaches cookies automatically, so add `SameSite=Lax` and check
+  `Origin` + JSON on every state-changing request.
+
+```mermaid
+flowchart LR
+  B([Browser]) -->|cookie| BFF[Web BFF<br/>renders pages] -->|Bearer token| GW[API gateway] --> S1[Service A] & S2[Service B]
+  M([Mobile app]) -->|Bearer token| GW
+```
+
+**Interview angle:** SSR vs SSG vs CSR trade-offs (TTFB, caching, SEO), why httpOnly cookies beat
+`localStorage` for XSS, CSRF defences, BFF vs API gateway, cold starts and how to hide them (memory,
+provisioned concurrency), caching only the non-personal pages at the edge.
+
+**In this project:** `web/proxy.ts`, `web/lib/server/*`, `web/app/bff/*`, `infra/lib/web.ts`, [09-ssr.md](09-ssr.md).
