@@ -6,9 +6,9 @@
 //   npx tsx scripts/src/shots.ts /feed --full    # full-page instead of viewport-only
 //   npx tsx scripts/src/shots.ts /me --light     # only one theme (--light / --dark), --desktop / --phone for one width
 //
-// Env: WEB (default http://localhost:3000), SHOTS_DIR (default: the session scratchpad shots/ folder),
+// Env: WEB (default http://localhost:3000; the local CloudFront URL after `npm run deploy:web` works too), SHOTS_DIR (default: the session scratchpad shots/ folder),
 //      SHOTS_USER / SHOTS_PASS (default bob / password1), SHOTS_DEBUG=1 prints per-shot timings.
-// Output: <SHOTS_DIR>/<route-slug>-<width>-<theme>.png, e.g. feed-1280-dark.png, u-name-star-390-light.png, post-390-dark.png
+// Output: <SHOTS_DIR>/<route-slug>-<width>-<theme>.png, e.g. feed-1280-dark.png, u-star-390-light.png, post-390-dark.png
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import puppeteer, { type Page } from "puppeteer-core";
@@ -23,7 +23,7 @@ const CHROME = [
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
 ].find(existsSync);
 
-const DEFAULT_ROUTES = ["/feed", "/me", "/new", "/notifications", "/u?name=star", "/login", "post"];
+const DEFAULT_ROUTES = ["/feed", "/me", "/new", "/notifications", "/u/star", "/login", "post"];
 const SIZES = [
   { name: "desktop", width: 1280, height: 900, mobile: false },
   { name: "phone", width: 390, height: 844, mobile: true },
@@ -40,9 +40,9 @@ const themes = THEMES.filter((t) => !(flags.has("--light") || flags.has("--dark"
 const sizes = SIZES.filter((s) => !(flags.has("--desktop") || flags.has("--phone")) || flags.has(`--${s.name}`));
 const fullPage = flags.has("--full");
 
-/** "/u?name=star" -> "u-name-star", "/" -> "root", "/p?id=abc" -> "post" */
+/** "/u/star" -> "u-star", "/" -> "root", "/p/abc?u=bob" -> "post" */
 function slug(route: string): string {
-  if (route.startsWith("/p?")) return "post";
+  if (route.startsWith("/p/")) return "post";
   const s = route.replace(/^\/+/, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "");
   return s || "root";
 }
@@ -69,6 +69,7 @@ async function settle(page: Page) {
   await new Promise((r) => setTimeout(r, 350));
 }
 
+/** Logs in through the form; the server sets httpOnly cookies, which the browser keeps for every later goto. */
 async function logIn(page: Page) {
   await page.goto(`${WEB}/login`, { waitUntil: "networkidle0" });
   await page.type('input[autocomplete="username"]', USER);
@@ -80,7 +81,7 @@ async function logIn(page: Page) {
 async function firstPostRoute(page: Page): Promise<string | null> {
   await page.goto(`${WEB}/feed`, { waitUntil: "networkidle0" });
   const href = await page
-    .waitForSelector(".feed-card a[href^='/p?id=']:not(.author)", { timeout: 15000 })
+    .waitForSelector(".feed-card a[href^='/p/']:not(.author)", { timeout: 15000 })
     .then((el) => el?.evaluate((a) => a.getAttribute("href")) ?? null)
     .catch(() => null);
   return href;

@@ -128,6 +128,8 @@ export async function ssrFlow(o: { base: string; functionUrl: string; ok: Ok }) 
   const notifs = await eventually(() => get(author, "/notifications").then((r) => r.text()),
     (h) => h.includes("liked your photo") && h.includes("commented:") && h.includes("started following you"), 45000);
   ok(notifs.includes("bob"), "ssr: author's /notifications HTML lists bob's like, comment and follow");
+  // Leave the demo data as it was: bob unfollows the test author (read-time filter hides the posts at once).
+  ok((await send(bob, "DELETE", `/bff/api/users/${me.userId}/follow`)).status === 200, "ssr: unfollow via /bff/api (bob's demo feed stays clean)");
 
   // ---------- refresh, sign-out, origin secret ----------
   const before = bob.header("/");
