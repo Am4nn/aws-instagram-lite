@@ -22,7 +22,7 @@ async function main() {
   const env = awsEnv(process.env); // throws if pointed at an emulator
   useAwsEnv();
   console.log(`Real AWS: profile ${env.AWS_PROFILE}, region ${AWS_STAGE_REGION}, stack ${AWS_STACK}`);
-  console.log(`(not logged in? run: aws sso login --profile ${env.AWS_PROFILE})\n`);
+  console.log(`(not logged in? run: aws login --profile ${env.AWS_PROFILE})\n`);
 
   // Bootstraps the environment the app's stack targets: your profile's account + ap-south-1.
   if (flags.bootstrap) cdk(["bootstrap", "-c", "stage=aws"], env);

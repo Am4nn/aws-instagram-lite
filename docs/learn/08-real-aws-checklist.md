@@ -6,14 +6,15 @@ to **ap-south-1 (Mumbai)**. Stack: `ig-aws-core`. The code is ready; these are t
 ## 1. Create the account (you, ~15 min)
 - [ ] Sign up at aws.amazon.com (needs a card; the free tier covers this project)
 - [ ] **Root user: turn on MFA** right away, then stop using root
-- [ ] **Billing → Budgets → create a $5 monthly budget** with email alerts at 50% / 100% ← first thing
-- [ ] IAM Identity Center → create a user for yourself with `AdministratorAccess` (for learning)
+- [ ] **Budgets → Monthly cost budget template, $5**, email alerts at 85% / 100% ← first thing
+- [ ] **IAM → Users → create `aman`** with console access + `AdministratorAccess` + MFA, then sign in as it.
+  Not IAM Identity Center: on a Free plan account it creates an AWS Organization, which permanently moves you to the Paid plan.
 - [ ] Install nothing new: AWS CLI v2 and CDK are already installed
 
 ## 2. Log in from the terminal (you)
 ```powershell
-aws configure sso          # profile name: ig, region: ap-south-1
-aws sso login --profile ig
+aws login --profile ig --region ap-south-1   # browser sign-in as aman; short-lived creds, no access keys (CLI ≥ 2.32)
+aws sts get-caller-identity --profile ig    # check: ...:user/aman
 ```
 
 ## 3. Deploy

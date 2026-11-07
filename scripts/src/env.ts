@@ -43,7 +43,7 @@ export const AWS_STAGE_REGION = "ap-south-1";
 
 /**
  * Env for real AWS (stage aws): never an emulator endpoint or Floci's fake keys, a named profile
- * (default `ig`, from `aws configure sso`) and the Mumbai region.
+ * (default `ig`, from `aws login --profile ig`) and the Mumbai region.
  */
 export function awsEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   if (base.AWS_ENDPOINT_URL) {
