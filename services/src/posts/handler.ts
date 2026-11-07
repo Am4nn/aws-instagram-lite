@@ -1,12 +1,12 @@
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from "aws-lambda";
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { json } from "../lib/http.js";
 import { subFromEvent, parseBody } from "../lib/auth.js";
 import { docClient, tableName } from "../lib/db.js";
 import { makeUsersRepo } from "../users/repo.js";
 import { makePostsRepo, type Post, type PostsRepo } from "./repo.js";
-import { uploadKey } from "./keys.js";
+import { mediaUrl, uploadKey } from "./keys.js";
 import { validateCreatePost } from "./validate.js";
 import { makeEngageRepo } from "../engage/repo.js";
 
@@ -16,14 +16,13 @@ export type PostsDeps = {
   repo: Pick<PostsRepo, "createPending" | "get" | "listByUser">;
   hasProfile: (userId: string) => Promise<boolean>;
   presignPut: (key: string, contentType: string, size: number) => Promise<string>;
-  presignGet: (key: string) => Promise<string>;
   likedBy: (postIds: string[], userId: string) => Promise<Set<string>>;
 };
 
-/** Adds short-lived image URLs (media bucket is private). */
-async function withUrls(post: Post, presignGet: PostsDeps["presignGet"]) {
+/** Adds the image URLs: same-site /media/... paths (CloudFront reads the private media bucket with OAC). */
+function withUrls(post: Post) {
   if (post.status !== "READY" || !post.media) return post;
-  return { ...post, thumbUrl: await presignGet(post.media.thumb), fullUrl: await presignGet(post.media.full) };
+  return { ...post, thumbUrl: mediaUrl(post.media.thumb), fullUrl: mediaUrl(post.media.full) };
 }
 
 export function makeHandler(d: PostsDeps) {
@@ -45,11 +44,11 @@ export function makeHandler(d: PostsDeps) {
         // Only the author may see a post that isn't READY yet.
         if (!post || (post.status !== "READY" && post.userId !== me)) return json(404, { error: "post not found" });
         const liked = await d.likedBy([post.postId], me);
-        return json(200, { ...(await withUrls(post, d.presignGet)), likedByMe: liked.has(post.postId) });
+        return json(200, { ...withUrls(post), likedByMe: liked.has(post.postId) });
       }
       case "GET /users/{userId}/posts": {
         const items = await d.repo.listByUser(event.pathParameters?.userId ?? "");
-        return json(200, { items: await Promise.all(items.map((p) => withUrls(p, d.presignGet))) });
+        return json(200, { items: items.map(withUrls) });
       }
       default:
         return json(404, { error: `no route ${event.routeKey}` });
@@ -69,8 +68,6 @@ function realDeps(): PostsDeps {
       getSignedUrl(s3, new PutObjectCommand({
         Bucket: process.env.UPLOADS_BUCKET, Key: key, ContentType: contentType, ContentLength: size,
       }), { expiresIn: 300, signableHeaders: new Set(["content-type", "content-length"]) }),
-    presignGet: (key) =>
-      getSignedUrl(s3, new GetObjectCommand({ Bucket: process.env.MEDIA_BUCKET, Key: key }), { expiresIn: 3600 }),
     likedBy: (ids, me) => makeEngageRepo(docClient(), tableName()).likedBy(ids, me),
   };
 }

@@ -16,3 +16,6 @@ export const mediaKeys = (postId: string) => ({
   thumb: `media/${postId}/thumb.jpg`,
   full: `media/${postId}/full.jpg`,
 });
+
+/** Browser URL of a media object: CloudFront serves the media bucket at /media/* (same site, cached at the edge). */
+export const mediaUrl = (key: string) => `/${key}`;
