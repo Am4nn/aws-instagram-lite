@@ -1,19 +1,20 @@
 /**
- * npm run deploy:web: build the Next.js static export and publish it to S3 + CloudFront (local stage).
- *   1. next build (NEXT_PUBLIC_* from web/.env.local, written by deploy:local)
- *   2. upload web/out/* with content types + cache headers (+ extensionless page copies), delete stale keys
- *   3. invalidate CloudFront so the new HTML is served
- *   4. let the CloudFront origin call Floci's Cognito (CORS): WEB_ORIGIN in .env → recreate container
- * Real AWS: npm run deploy:aws (same build + publish, see web-publish.ts).
+ * npm run deploy:web: build the Next.js app with OpenNext and run it on Floci (local stage).
+ *   1. open-next build → web/.open-next (server Lambda bundle + static assets)
+ *   2. cdk deploy ig-local-core: the web-server Lambda gets the new bundle
+ *   3. upload .open-next/assets to the web bucket (CloudFront serves /_next/static/* from there)
+ *   4. .env: WEB_ORIGIN (Floci CORS for browser → S3 uploads) + SSR_ORIGIN_HOST (Floci's CloudFront may
+ *      only proxy to hosts listed exactly) → recreate the Floci container if it changed (state persists)
+ * Real AWS: npm run deploy:aws (same build + publish).
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { S3Client } from "@aws-sdk/client-s3";
-import { CloudFrontClient } from "@aws-sdk/client-cloudfront";
 import { assertFlociUp, useLocalEnv } from "./env.js";
-import { readOutputs } from "./deploy-local.js";
+import { cdk, readOutputs } from "./deploy-local.js";
+import { flociEnvFile, ssrOriginHost } from "./urls.js";
 import { buildWeb, publishWeb } from "./web-publish.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -24,27 +25,27 @@ export const localCdnUrl = (domain: string) => `http://${domain.replace(/\.cloud
 async function main() {
   await assertFlociUp();
   useLocalEnv();
+  buildWeb();
+  cdk([
+    "deploy", "ig-local-core", "-c", "stage=local",
+    "--require-approval", "never", "--outputs-file", "cdk.out/outputs-local.json",
+  ]);
   const out = readOutputs("ig-local-core");
   const url = localCdnUrl(out.DistributionDomain);
+  const r = await publishWeb({ s3: new S3Client({ forcePathStyle: true }), bucket: out.WebBucket });
+  console.log(`Uploaded ${r.uploaded} assets (${r.deleted} leftovers removed).`);
 
-  // 4 first: if the CORS origin changes, the container is recreated (state persists, see docker-compose.yml)
   const envFile = join(root, ".env");
-  const short = url.replace(".localhost.floci.io", ".localhost"); // Chrome/Edge resolve *.localhost themselves
-  const wanted = `WEB_ORIGIN=${url}\nWEB_ORIGIN_SHORT=${short}\n`;
+  const wanted = flociEnvFile({ webOrigin: url, ssrOriginHost: ssrOriginHost(out.ServerFunctionUrl) });
   if (!existsSync(envFile) || readFileSync(envFile, "utf8") !== wanted) {
     writeFileSync(envFile, wanted);
-    console.log(`Allowing ${url} in Floci CORS (recreating the container)…`);
-    const r = spawnSync("docker", ["compose", "up", "-d", "--wait"], { cwd: root, stdio: "inherit" });
-    if (r.status !== 0) throw new Error("docker compose up failed");
+    console.log("Floci settings changed (.env): recreating the container…");
+    const d = spawnSync("docker", ["compose", "up", "-d", "--wait"], { cwd: root, stdio: "inherit" });
+    if (d.status !== 0) throw new Error("docker compose up failed");
     await assertFlociUp();
   }
-
-  buildWeb();
-  const r = await publishWeb({
-    s3: new S3Client({ forcePathStyle: true }), cloudfront: new CloudFrontClient({}),
-    bucket: out.WebBucket, distributionId: out.DistributionId,
-  });
-  console.log(`\nUploaded ${r.uploaded} objects (${r.deleted} stale removed). Open: ${url}/login\n  (or, no DNS needed: ${short}/login)\n`);
+  const short = url.replace(".localhost.floci.io", ".localhost");
+  console.log(`\nOpen: ${url}/login\n  (or, no DNS needed: ${short}/login)\n`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

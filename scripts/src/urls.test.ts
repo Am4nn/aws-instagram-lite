@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { awsWebBuildEnv, localApiUrl, webEnvFile } from "./urls.js";
+import { devEnvFile, flociEnvFile, localApiUrl, ssrOriginHost } from "./urls.js";
 
 describe("localApiUrl", () => {
   it("maps the amazonaws.com HTTP API endpoint to Floci's local hostname", () => {
@@ -12,36 +12,42 @@ describe("localApiUrl", () => {
   });
 });
 
-describe("webEnvFile", () => {
-  it("writes API URL, Cognito client id and Cognito endpoint for Next.js", () => {
-    expect(webEnvFile({
-      apiUrl: "http://abc.execute-api.localhost.floci.io:4566",
-      userPoolClientId: "client123",
-      cognitoEndpoint: "http://localhost:4566",
-    })).toBe(
-      "NEXT_PUBLIC_API_URL=http://abc.execute-api.localhost.floci.io:4566\n" +
-      "NEXT_PUBLIC_USER_POOL_CLIENT_ID=client123\n" +
-      "NEXT_PUBLIC_COGNITO_ENDPOINT=http://localhost:4566\n",
+describe("devEnvFile (web/.env.development.local, read by next dev only)", () => {
+  it("has the server settings: API, Cognito at Floci, media from Floci S3; no NEXT_PUBLIC_* and no secret", () => {
+    const f = devEnvFile({
+      apiUrl: "http://abc.execute-api.localhost.floci.io:4566", userPoolClientId: "client123",
+      mediaBucket: "ig-local-media-000000000000",
+    });
+    expect(f).toBe(
+      "API_URL=http://abc.execute-api.localhost.floci.io:4566\n" +
+      "USER_POOL_CLIENT_ID=client123\n" +
+      "COGNITO_ENDPOINT=http://localhost:4566\n" +
+      "COGNITO_REGION=us-east-1\n" +
+      "MEDIA_DEV_ORIGIN=http://localhost:4566/ig-local-media-000000000000\n",
     );
+    expect(f).not.toMatch(/NEXT_PUBLIC|ORIGIN_VERIFY_SECRET/);
   });
 });
 
-describe("awsWebBuildEnv", () => {
-  const out = { ApiUrl: "https://abc.execute-api.ap-southeast-2.amazonaws.com/", UserPoolClientId: "client123" };
-
-  it("points the web build at the real API + Cognito in the region, with email sign-up", () => {
-    expect(awsWebBuildEnv(out, "ap-southeast-2")).toEqual({
-      NEXT_PUBLIC_API_URL: "https://abc.execute-api.ap-southeast-2.amazonaws.com",
-      NEXT_PUBLIC_USER_POOL_CLIENT_ID: "client123",
-      NEXT_PUBLIC_AWS_REGION: "ap-southeast-2",
-      NEXT_PUBLIC_COGNITO_ENDPOINT: "", // must be set (empty) so web/.env.local's Floci URL is not used
-      NEXT_PUBLIC_SIGNUP_EMAIL: "required",
-    });
+describe("ssrOriginHost (the Function URL host Floci's CloudFront may proxy to)", () => {
+  it("turns Floci's unresolvable 127.0.0.1 URL into the localhost.floci.io host", () => {
+    expect(ssrOriginHost("http://abc123.lambda-url.us-east-1.127.0.0.1:4566/")).toBe("abc123.lambda-url.us-east-1.localhost.floci.io");
   });
+  it("also accepts the AWS-style URL", () => {
+    expect(ssrOriginHost("https://abc123.lambda-url.us-east-1.on.aws/")).toBe("abc123.lambda-url.us-east-1.localhost.floci.io");
+  });
+  it("throws on anything else", () => {
+    expect(() => ssrOriginHost("https://example.com/")).toThrow(/Function URL/);
+  });
+});
 
-  it("refuses outputs from a failed or partial deploy", () => {
-    expect(() => awsWebBuildEnv({ ApiUrl: out.ApiUrl }, "ap-southeast-2")).toThrow(/UserPoolClientId/);
-    expect(() => awsWebBuildEnv({ ...out, ApiUrl: "http://x.execute-api.localhost.floci.io:4566" }, "ap-southeast-2"))
-      .toThrow(/not a real AWS API URL/);
+describe("flociEnvFile (repo-root .env, read by docker-compose.yml)", () => {
+  it("has the CloudFront origins (CORS) and the SSR origin host", () => {
+    expect(flociEnvFile({ webOrigin: "http://d1.cloudfront.localhost.floci.io:4566", ssrOriginHost: "abc.lambda-url.us-east-1.localhost.floci.io" }))
+      .toBe(
+        "WEB_ORIGIN=http://d1.cloudfront.localhost.floci.io:4566\n" +
+        "WEB_ORIGIN_SHORT=http://d1.cloudfront.localhost:4566\n" +
+        "SSR_ORIGIN_HOST=abc.lambda-url.us-east-1.localhost.floci.io\n",
+      );
   });
 });

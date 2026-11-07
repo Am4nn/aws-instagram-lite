@@ -1,13 +1,15 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { assertFlociUp, localEnv, useLocalEnv } from "./env.js";
-import { localApiUrl, webEnvFile } from "./urls.js";
+import { devEnvFile, localApiUrl } from "./urls.js";
 import { cleanStaleStacks } from "./stale.js";
 
 export const infraDir = fileURLToPath(new URL("../../infra/", import.meta.url));
-const webEnvPath = fileURLToPath(new URL("../../web/.env.local", import.meta.url));
+const webEnvPath = fileURLToPath(new URL("../../web/.env.development.local", import.meta.url));
+/** Before step 9 the browser build read web/.env.local; Next also loads it for production builds, so it must go. */
+const oldWebEnvPath = fileURLToPath(new URL("../../web/.env.local", import.meta.url));
 
 /** Run the CDK CLI inside infra/ (default: with Floci env vars). Throws on non-zero exit. */
 export function cdk(args: string[], env: NodeJS.ProcessEnv = localEnv(process.env)): void {
@@ -38,10 +40,10 @@ async function main() {
   ]);
   const out = readOutputs("ig-local-core");
   const api = localApiUrl(out.ApiUrl);
-  writeFileSync(webEnvPath, webEnvFile({
-    apiUrl: api, userPoolClientId: out.UserPoolClientId, cognitoEndpoint: "http://localhost:4566",
-  }));
-  console.log(`\nLocal API: ${api}\nTry: curl ${api}/health\nWrote web/.env.local, now run: npm -w web run dev\n`);
+  writeFileSync(webEnvPath, devEnvFile({ apiUrl: api, userPoolClientId: out.UserPoolClientId, mediaBucket: out.MediaBucket }));
+  rmSync(oldWebEnvPath, { force: true });
+  console.log(`\nLocal API: ${api}\nTry: curl ${api}/health`);
+  console.log("Wrote web/.env.development.local. Next: npm run deploy:web (the site on Floci's CloudFront), or npm -w web run dev\n");
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

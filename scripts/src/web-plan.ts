@@ -13,30 +13,31 @@ const TYPES: Record<string, string> = {
   woff2: "font/woff2",
 };
 
+const IMMUTABLE = "public, max-age=31536000, immutable";
+
 /**
- * Static-site upload plan:
- *  - `_next/static/*` file names contain a content hash → cache forever (`immutable`)
- *  - everything else (HTML, Next page-data .txt, favicon) has no hash → `no-cache` (revalidate each time)
- *  - each page also gets an extensionless key (`login.html` → `login`) so `/login` works on plain
- *    S3+CloudFront (the usual alternative is a CloudFront Function rewriting the URL)
+ * Upload plan for OpenNext's `.open-next/assets` (CloudFront serves `/_next/static/*` from the bucket):
+ *  - `_next/static/*` names contain a content hash (or the build id) → cache forever (`immutable`)
+ *  - anything else (BUILD_ID) → `no-cache`
+ * Pages are no longer files: the server Lambda renders them.
  */
 export function webUploadPlan(files: string[]): Upload[] {
-  const out: Upload[] = [];
-  for (const file of files.map((f) => f.replace(/\\/g, "/"))) {
-    const ext = file.split(".").pop()!.toLowerCase();
-    const contentType = TYPES[ext] ?? "application/octet-stream";
-    const cacheControl = file.startsWith("_next/static/") ? "public, max-age=31536000, immutable"
-      : "no-cache"; // unhashed names (HTML, Next .txt page data, favicon) must revalidate after each deploy
-    out.push({ key: file, file, contentType, cacheControl });
-    if (ext === "html" && file !== "index.html" && file !== "404.html") {
-      out.push({ key: file.slice(0, -".html".length), file, contentType, cacheControl });
-    }
-  }
-  return out;
+  return files.map((file) => {
+    const key = file.replace(/\\/g, "/");
+    const ext = key.split(".").pop()!.toLowerCase();
+    return {
+      key, file,
+      contentType: TYPES[ext] ?? "application/octet-stream",
+      cacheControl: key.startsWith("_next/static/") ? IMMUTABLE : "no-cache",
+    };
+  });
 }
 
-/** Keys left in the bucket from older builds (old pages, old hashed chunks): delete after uploading. */
+/**
+ * Keys to delete after uploading: leftovers outside `_next/static/` (e.g. the step 7 static-export pages).
+ * Old hashed chunks stay: a page rendered by the previous deploy may still be open and load them.
+ */
 export function staleKeys(existing: string[], plan: Upload[]): string[] {
   const keep = new Set(plan.map((u) => u.key));
-  return existing.filter((k) => !keep.has(k));
+  return existing.filter((k) => !keep.has(k) && !k.startsWith("_next/static/"));
 }
