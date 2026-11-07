@@ -31,6 +31,10 @@ export class CoreStack extends Stack {
   readonly userPool: cognito.UserPool;
   readonly authorizer: HttpJwtAuthorizer;
   readonly stageConfig: StageConfig;
+  /** aws: `https://<CloudFront domain>`, the only browser origin allowed. local: undefined (= any). */
+  readonly webOrigin?: string;
+  /** Every function made by addFunction, by short name (feeds the ops dashboard). */
+  readonly functions: Record<string, NodejsFunction> = {};
 
   constructor(scope: Construct, id: string, props: CoreStackProps) {
     super(scope, id, props);
@@ -45,6 +49,8 @@ export class CoreStack extends Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       timeToLiveAttribute: "ttl",
       stream: dynamodb.StreamViewType.NEW_IMAGE, // change data capture → events (step 5)
+      // DESTROY on aws too: a learning project, `npm run destroy:aws` should leave nothing behind.
+      // A real app would use RETAIN (+ point-in-time recovery) so a destroy can't wipe user data.
       removalPolicy: RemovalPolicy.DESTROY,
     });
     this.table.addGlobalSecondaryIndex({
@@ -54,14 +60,23 @@ export class CoreStack extends Stack {
     });
 
     // ---------- Auth: Cognito user pool ----------
-    const preSignUp = this.addFunction("presignup", "auth/presignup.ts", { tableAccess: false });
+    // local: a PreSignUp trigger auto-confirms (Floci sends no email).
+    // aws: sign-up needs an email; Cognito mails a code (its default sender, ~50 mails/day) and the
+    // account is confirmed once the user types it in (web: ConfirmSignUp).
+    const isLocal = props.config.isLocal;
     this.userPool = new cognito.UserPool(this, "Users", {
       userPoolName: `${prefix}-users`,
       selfSignUpEnabled: true,
       signInAliases: { username: true },
       passwordPolicy: { minLength: 8, requireSymbols: false, requireUppercase: false, requireDigits: false },
-      lambdaTriggers: { preSignUp },
       removalPolicy: RemovalPolicy.DESTROY,
+      ...(isLocal
+        ? { lambdaTriggers: { preSignUp: this.addFunction("presignup", "auth/presignup.ts", { tableAccess: false }) } }
+        : {
+          standardAttributes: { email: { required: true, mutable: true } },
+          autoVerify: { email: true },
+          accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+        }),
     });
     const client = this.userPool.addClient("Web", {
       userPoolClientName: `${prefix}-web`,
@@ -74,11 +89,18 @@ export class CoreStack extends Stack {
       { jwtAudience: [client.userPoolClientId] },
     );
 
+    // ---------- Web hosting: S3 + CloudFront (step 7) ----------
+    // Created before the API: on aws the API's CORS names the distribution's domain
+    // (API → CloudFront dependency only; CloudFront doesn't depend on the API, so no cycle).
+    const web = addWeb(this);
+    this.webOrigin = isLocal ? undefined : `https://${web.distribution.distributionDomainName}`;
+
     // ---------- API ----------
+    // HTTP API CORS overrides the CORS headers the Lambdas send (lib/http.ts says "*").
     this.api = new apigwv2.HttpApi(this, "Api", {
       apiName: `${prefix}-api`,
       corsPreflight: {
-        allowOrigins: ["*"],
+        allowOrigins: [this.webOrigin ?? "*"],
         allowMethods: [
           apigwv2.CorsHttpMethod.GET, apigwv2.CorsHttpMethod.POST,
           apigwv2.CorsHttpMethod.PUT, apigwv2.CorsHttpMethod.DELETE,
@@ -110,12 +132,10 @@ export class CoreStack extends Stack {
     // ---------- Likes, comments, notifications (step 5) ----------
     const engage = addEngage(this, { bus: pipeline.bus });
 
-    // ---------- Web hosting: S3 + CloudFront (step 7) ----------
-    addWeb(this);
-
     // ---------- Ops: alarms + ops topic (step 6) ----------
     addOps(this, {
       dlqs: { uploads: pipeline.dlq, fanout: social.fanoutDlq, notify: engage.notifyDlq, cdc: engage.cdcDlq },
+      queues: { uploads: pipeline.queue, fanout: social.fanoutQueue, notify: engage.notifyQueue },
       pipeline: pipeline.machine,
       api: this.api,
     });
@@ -149,6 +169,7 @@ export class CoreStack extends Stack {
       bundling: { minify: true },
     });
     if (opts.tableAccess !== false) this.table.grantReadWriteData(fn);
+    this.functions[name] = fn;
     return fn;
   }
 

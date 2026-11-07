@@ -6,12 +6,14 @@
  * Photos are real (Unsplash via picsum.photos, credits in photo-credits.json), cached in scripts/.photos.
  * Safe to re-run: sign-up/follow are idempotent and a photo is only posted if that user has no
  * READY post with its caption yet (older demo posts are left alone; new ones land on top).
+ * Real AWS (after deploy:aws): npm run seed:aws (= --stage=aws, or IG_STAGE=aws; profile AWS_PROFILE, default ig).
+ * There the users are created as admin with a verified placeholder email (<name>@example.com).
  */
 import { fileURLToPath } from "node:url";
-import { assertFlociUp, useLocalEnv } from "./env.js";
+import { assertFlociUp, scriptStage, useAwsEnv, useLocalEnv } from "./env.js";
 import { CREDITS, ensurePhotos, readPhoto } from "./photos.js";
 import {
-  localCtx, signUpOrIn, ensureProfile, call, uploadPhoto, waitForStatus, type Ctx, type Session,
+  awsCtx, localCtx, signUpOrIn, ensureProfile, call, uploadPhoto, waitForStatus, type Ctx, type Session,
 } from "./client.js";
 
 type Photo = { id: number; caption: string };
@@ -91,9 +93,15 @@ export async function seed(c: Ctx): Promise<Record<string, Session>> {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   (async () => {
-    await assertFlociUp();
-    useLocalEnv();
-    await seed(localCtx());
-    console.log(`Seeded: ${SEED_USERS.map((u) => u.name).join(", ")} (password: password1). Try logging in as bob.`);
+    const stage = scriptStage(process.env, process.argv.slice(2));
+    if (stage === "aws") {
+      useAwsEnv(); // throws if AWS_ENDPOINT_URL is set
+      await seed(awsCtx());
+    } else {
+      await assertFlociUp();
+      useLocalEnv();
+      await seed(localCtx());
+    }
+    console.log(`Seeded ${stage}: ${SEED_USERS.map((u) => u.name).join(", ")} (password: password1). Try logging in as bob.`);
   })().catch((e) => { console.error(String(e.message ?? e)); process.exit(1); });
 }

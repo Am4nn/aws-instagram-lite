@@ -9,7 +9,9 @@
     "smoke": "tsx src/smoke.ts",
     "seed": "tsx src/seed.ts",
     "ops": "tsx src/ops.ts",
-    "deploy-web": "tsx src/deploy-web.ts"
+    "deploy-web": "tsx src/deploy-web.ts",
+    "deploy-aws": "tsx src/deploy-aws.ts",
+    "destroy-aws": "tsx src/destroy-aws.ts"
   },
   "dependencies": {
     "@aws-sdk/client-cloudformation": "^3.1163.0",

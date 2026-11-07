@@ -4,10 +4,11 @@ import { CoreStack } from "../lib/core-stack.js";
 import { SpikeStack } from "../lib/spike-stack.js";
 
 const app = new App();
-const config = loadConfig(app.node.tryGetContext("stage"), process.env);
-const env = config.isLocal
-  ? { account: "000000000000", region: "us-east-1" }
-  : { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION ?? "us-east-1" };
+const config = loadConfig(app.node.tryGetContext("stage"), process.env, {
+  alertEmail: app.node.tryGetContext("alertEmail"),
+});
+// aws: the account comes from your profile (CDK sets CDK_DEFAULT_ACCOUNT); the region is pinned in config.
+const env = { account: config.isLocal ? "000000000000" : process.env.CDK_DEFAULT_ACCOUNT, region: config.region };
 
 new CoreStack(app, `${config.prefix}-core`, { env, config });
 

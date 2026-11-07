@@ -26,6 +26,8 @@ main.login { padding-top: clamp(var(--s-8), 11vh, 112px); }
 
 .login-card .error { margin: -6px 0 -2px; }
 .login-submit { height: 40px; }
+.login-resend { margin: 0; text-align: center; font-size: var(--fs-sm); }
+.login-resend button.link { font-size: var(--fs-sm); }
 .login-submit .spinner {
   border-color: color-mix(in srgb, var(--on-accent) 35%, transparent);
   border-top-color: var(--on-accent);

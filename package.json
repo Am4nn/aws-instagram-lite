@@ -15,6 +15,9 @@
     "spike": "npm -w scripts run spike",
     "smoke": "npm -w scripts run smoke",
     "seed": "npm -w scripts run seed",
+    "seed:aws": "npm -w scripts run seed -- --stage=aws",
+    "deploy:aws": "npm -w scripts run deploy-aws --",
+    "destroy:aws": "npm -w scripts run destroy-aws",
     "ops": "npm -w scripts run ops --",
     "deploy:web": "npm -w scripts run deploy-web"
   },

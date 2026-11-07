@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { flociEnv, assertFlociUp, FLOCI_ENDPOINT, localEnv } from "./env.js";
+import { flociEnv, assertFlociUp, FLOCI_ENDPOINT, localEnv, awsEnv, scriptStage } from "./env.js";
 
 describe("localEnv", () => {
   it("drops real-AWS credential settings so Floci always gets test/test", () => {
@@ -37,5 +37,27 @@ describe("assertFlociUp", () => {
   it("resolves when Floci answers any HTTP response", async () => {
     const up = (async () => new Response("", { status: 404 })) as unknown as typeof fetch;
     await expect(assertFlociUp(FLOCI_ENDPOINT, up)).resolves.toBeUndefined();
+  });
+});
+
+describe("awsEnv (real AWS, stage aws)", () => {
+  it("uses the ig profile by default and pins ap-southeast-2", () => {
+    const env = awsEnv({ PATH: "/bin" });
+    expect(env).toMatchObject({ PATH: "/bin", AWS_PROFILE: "ig", AWS_REGION: "ap-southeast-2", AWS_DEFAULT_REGION: "ap-southeast-2" });
+    expect(awsEnv({ AWS_PROFILE: "work" }).AWS_PROFILE).toBe("work");
+  });
+
+  it("refuses while pointed at an emulator or holding Floci's fake keys", () => {
+    expect(() => awsEnv({ AWS_ENDPOINT_URL: "http://localhost:4566" })).toThrow(/unset AWS_ENDPOINT_URL/);
+    expect(() => awsEnv({ AWS_ACCESS_KEY_ID: "test" })).toThrow(/Floci/);
+  });
+});
+
+describe("scriptStage", () => {
+  it("is local unless IG_STAGE=aws", () => {
+    expect(scriptStage({})).toBe("local");
+    expect(scriptStage({ IG_STAGE: "aws" })).toBe("aws");
+    expect(() => scriptStage({ IG_STAGE: "prod" })).toThrow(/IG_STAGE/);
+    expect(scriptStage({}, ["--stage=aws"])).toBe("aws");
   });
 });

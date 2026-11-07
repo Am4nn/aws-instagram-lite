@@ -34,3 +34,9 @@ export function webUploadPlan(files: string[]): Upload[] {
   }
   return out;
 }
+
+/** Keys left in the bucket from older builds (old pages, old hashed chunks): delete after uploading. */
+export function staleKeys(existing: string[], plan: Upload[]): string[] {
+  const keep = new Set(plan.map((u) => u.key));
+  return existing.filter((k) => !keep.has(k));
+}
