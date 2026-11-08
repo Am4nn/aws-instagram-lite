@@ -12,3 +12,6 @@ scripts/.photos/
 # step 9: OpenNext build output, dev-only env for next dev
 .open-next/
 .env.development.local
+
+# your own deploy settings (alert email, domain, cert ARN); see infra/cdk.context.example.json
+infra/cdk.context.json

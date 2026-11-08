@@ -1,0 +1,5 @@
+{
+  "alertEmail": "you@example.com",
+  "domainName": "app.example.com",
+  "certificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+}

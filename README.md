@@ -19,6 +19,11 @@ npm run deploy:web        # the "production" way: Next.js server on Lambda behin
 npm -w web run dev        # or the dev server: http://localhost:3000
 ```
 
+## Deploy to real AWS
+See [docs/learn/08-real-aws-checklist.md](docs/learn/08-real-aws-checklist.md). Optional settings (alarm email, custom domain + ACM cert)
+go in `infra/cdk.context.json` (gitignored, the CDK CLI reads it automatically): copy
+`infra/cdk.context.example.json` and fill in your values.
+
 ## Check it
 ```powershell
 npm test                          # unit + template tests
